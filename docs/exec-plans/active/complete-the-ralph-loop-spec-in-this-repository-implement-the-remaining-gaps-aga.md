@@ -16,16 +16,16 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 | M3 | Structured output contract hardening | done (2026-03-18) | Enforce `text/json/ndjson` behavior across commands, keep structured errors in machine-readable modes, and enforce safe `--output-file` sandboxing to current working directory. |
 | M4 | Core command behavior completion | done (2026-03-18) | Implement remaining runtime behavior gaps in `init`, main loop lifecycle events, `ls`, and `tail` (including pagination/field-mask semantics and NDJSON streaming expectations). |
 | M5 | Tests and regression coverage | done (2026-03-18) | Add/extend tests for parser, schema output, output modes, command envelopes, and failure paths so the spec-critical contracts are protected. |
-| M6 | Final verification and handoff | not started | Run full test suite, summarize completed spec deltas, and produce a concise handoff with known limitations and next actions. |
+| M6 | Final verification and handoff | done (2026-03-18) | Run full test suite, summarize completed spec deltas, and produce a concise handoff with known limitations and next actions. |
 
 ## Current progress
-- Overall status: in progress (M1-M5 complete, M6 next).
+- Overall status: complete (M1-M6 done).
 - M1: completed baseline audit of command contracts against `SPEC.md` and vendored references.
 - M2: completed parser/schema parity pass including stricter option validation and schema payload contract cleanup.
 - M3: completed machine-readable error envelope handling and hardened output-file sandbox validation.
 - M4: completed core runtime behavior pass for `init`, `main`, `ls`, and `tail`.
 - M5: completed regression coverage expansion for schema/read/dry-run output contracts and envelope behavior.
-- M6: not started.
+- M6: completed final verification + handoff summary.
 
 ## M2 completion summary (2026-03-18)
 - Enforced parser strictness:
@@ -102,6 +102,22 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
   - parser strictness and schema parity (`parser_test.go`, `schema_test.go`),
   - machine-readable failure envelopes and output-path hardening (`run_test.go`, `util_test.go`).
 - Verified with `go test ./...` after the new suite.
+
+## M6 final verification + handoff (2026-03-18)
+- Verification commands executed:
+  - `go test ./...` (pass),
+  - `./ralph-loop schema --output json` (pass; schema envelope emitted),
+  - `./ralph-loop init --dry-run --output json` (pass; includes `request` + `side_effects`),
+  - `./ralph-loop ls --output ndjson` (pass; per-session NDJSON record),
+  - `./ralph-loop tail --lines 1 --output json` (pass; metadata + paginated items envelope).
+- Completed spec-delta summary:
+  - parser/schema contract parity and option/alias validation implemented,
+  - machine-readable failure behavior and output-file sandboxing hardened,
+  - core runtime behavior advanced for `init`, main lifecycle NDJSON events, `ls`, and `tail`,
+  - regression coverage expanded around command/output envelopes and dry-run contracts.
+- Handoff outcome:
+  - CLI is materially closer to spec-complete for command behavior and machine-readable contracts.
+  - Remaining items are now mostly edge-case/spec-interpretation and advanced orchestration behaviors.
 
 ## M1 contract baseline (2026-03-18)
 ### Cross-command contract deltas
