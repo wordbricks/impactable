@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -201,10 +202,22 @@ WHERE metric_name = '%s'
 		return metricComparison{}, fmt.Errorf("scorer query returned no rows for metric comparison")
 	}
 
-	beforeValue := floatFromAny(beforeRows[0]["metric_value"])
-	afterValue := floatFromAny(afterRows[0]["metric_value"])
-	beforeSample := floatFromAny(beforeRows[0]["sample_size"])
-	afterSample := floatFromAny(afterRows[0]["sample_size"])
+	beforeValue, ok := strictFloatFromAny(beforeRows[0]["metric_value"])
+	if !ok {
+		return metricComparison{}, fmt.Errorf("scorer returned invalid before metric_value")
+	}
+	afterValue, ok := strictFloatFromAny(afterRows[0]["metric_value"])
+	if !ok {
+		return metricComparison{}, fmt.Errorf("scorer returned invalid after metric_value")
+	}
+	beforeSample, ok := strictFloatFromAny(beforeRows[0]["sample_size"])
+	if !ok || beforeSample <= 0 {
+		return metricComparison{}, fmt.Errorf("scorer returned invalid before sample_size")
+	}
+	afterSample, ok := strictFloatFromAny(afterRows[0]["sample_size"])
+	if !ok || afterSample <= 0 {
+		return metricComparison{}, fmt.Errorf("scorer returned invalid after sample_size")
+	}
 	confidence := deriveConfidence(beforeSample, afterSample, minConfidence)
 
 	delta := afterValue - beforeValue
@@ -334,6 +347,29 @@ func floatFromAny(value any) float64 {
 		}
 	}
 	return 0
+}
+
+func strictFloatFromAny(value any) (float64, bool) {
+	number := floatFromAny(value)
+	if math.IsNaN(number) || math.IsInf(number, 0) {
+		return 0, false
+	}
+
+	switch typed := value.(type) {
+	case float64, float32, int, int64:
+		return number, true
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return 0, false
+		}
+		if _, err := strconv.ParseFloat(trimmed, 64); err != nil {
+			return 0, false
+		}
+		return number, true
+	default:
+		return 0, false
+	}
 }
 
 func intFromAny(value any) int {

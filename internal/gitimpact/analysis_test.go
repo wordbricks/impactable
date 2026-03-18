@@ -110,3 +110,71 @@ func TestAnalyzeSinglePR_ErrorsOnInvalidMergedAt(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestAnalyzeSinglePR_ErrorsOnInvalidMetricValue(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultConfig()
+	cfg.Velen.Sources.GitHub = "github-main"
+	cfg.Velen.Sources.Warehouse = "prod-warehouse"
+	cfg.Velen.Sources.Analytics = "amplitude-prod"
+
+	_, _, err := analyzeSinglePR(context.Background(), fakeVelenClient{
+		queryFunc: func(sourceKey string, _ string) ([]byte, error) {
+			switch sourceKey {
+			case "github-main":
+				return []byte(`{"rows":[{"pr_number":142,"title":"Checkout Redesign","author":"kim","merged_at":"2026-02-15T00:00:00Z"}]}`), nil
+			case "prod-warehouse":
+				return []byte(`{"rows":[{"deployed_at":"2026-02-15T03:00:00Z"}]}`), nil
+			case "amplitude-prod":
+				return []byte(`{"rows":[{"metric_value":"not-a-number","sample_size":2000}]}`), nil
+			default:
+				return nil, assertErr("unexpected source key")
+			}
+		},
+	}, cfg, 142)
+	if err == nil {
+		t.Fatalf("expected analyzeSinglePR error")
+	}
+	if !strings.Contains(err.Error(), "invalid before metric_value") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAnalyzeSinglePR_ErrorsOnNonPositiveSampleSize(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultConfig()
+	cfg.Velen.Sources.GitHub = "github-main"
+	cfg.Velen.Sources.Warehouse = "prod-warehouse"
+	cfg.Velen.Sources.Analytics = "amplitude-prod"
+
+	_, _, err := analyzeSinglePR(context.Background(), fakeVelenClient{
+		queryFunc: func(sourceKey string, queryFile string) ([]byte, error) {
+			sqlBody, readErr := os.ReadFile(queryFile)
+			if readErr != nil {
+				return nil, readErr
+			}
+			sql := string(sqlBody)
+			switch sourceKey {
+			case "github-main":
+				return []byte(`{"rows":[{"pr_number":142,"title":"Checkout Redesign","author":"kim","merged_at":"2026-02-15T00:00:00Z"}]}`), nil
+			case "prod-warehouse":
+				return []byte(`{"rows":[{"deployed_at":"2026-02-15T03:00:00Z"}]}`), nil
+			case "amplitude-prod":
+				if strings.Contains(sql, "phase: before") {
+					return []byte(`{"rows":[{"metric_value":0.10,"sample_size":0}]}`), nil
+				}
+				return []byte(`{"rows":[{"metric_value":0.12,"sample_size":100}]}`), nil
+			default:
+				return nil, assertErr("unexpected source key")
+			}
+		},
+	}, cfg, 142)
+	if err == nil {
+		t.Fatalf("expected analyzeSinglePR error")
+	}
+	if !strings.Contains(err.Error(), "invalid before sample_size") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
