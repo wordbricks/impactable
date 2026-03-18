@@ -45,7 +45,7 @@ type commandDescriptor struct {
 func commandDescriptors() []commandDescriptor {
 	baseReadOptions := []optionDescriptor{
 		{Name: "--json", Description: "Raw JSON payload or - for stdin", Type: "string"},
-		{Name: "--output", Description: "Output format", Type: "string", Default: "text|json", Enum: []string{"text", "json", "ndjson"}},
+		{Name: "--output", Description: "Output format", Type: "string", Default: "text (tty) / json (non-tty)", Enum: []string{"text", "json", "ndjson"}},
 		{Name: "--output-file", Description: "Write the result to a file under the current working directory", Type: "string"},
 		{Name: "--fields", Description: "Comma-separated field mask", Type: "string"},
 		{Name: "--page", Description: "Page number", Type: "integer", Default: defaultPage},
@@ -147,8 +147,8 @@ func commandDescriptors() []commandDescriptor {
 			Description: "Read or follow a Ralph Loop log file.",
 			Positionals: []argumentDescriptor{{Name: "selector", Description: "Optional selector", Type: "string"}},
 			Options: append([]optionDescriptor{}, append(baseReadOptions,
-				optionDescriptor{Name: "--lines", Description: "Number of lines", Type: "integer", Default: defaultTailLines},
-				optionDescriptor{Name: "--follow", Description: "Follow appended log lines", Type: "boolean", Default: false},
+				optionDescriptor{Name: "--lines", Aliases: []string{"-n"}, Description: "Number of lines", Type: "integer", Default: defaultTailLines},
+				optionDescriptor{Name: "--follow", Aliases: []string{"-f"}, Description: "Follow appended log lines", Type: "boolean", Default: false},
 				optionDescriptor{Name: "--raw", Description: "Do not render pretty summaries", Type: "boolean", Default: false},
 			)...),
 			MutatesState:   false,
@@ -182,15 +182,44 @@ func commandDescriptors() []commandDescriptor {
 			RawPayloadSchema: payloadSchema{
 				Type: "object",
 				Properties: map[string]propertyDef{
-					"command":     {Type: "string", Description: "Optional command to describe"},
-					"output":      {Type: "string", Description: "Output format", Enum: []string{"text", "json", "ndjson"}},
-					"output_file": {Type: "string", Description: "Output file path"},
-					"fields":      {Type: "array", Description: "Field mask", Items: &propertyDef{Type: "string", Description: "Field name"}},
-					"page":        {Type: "integer", Description: "Page number", Default: defaultPage},
-					"page_size":   {Type: "integer", Description: "Page size", Default: defaultPageSize},
-					"page_all":    {Type: "boolean", Description: "Return all pages", Default: false},
+					"command":        {Type: "string", Description: "Command name", Default: commandSchema},
+					"target_command": {Type: "string", Description: "Optional command to describe"},
+					"command_name":   {Type: "string", Description: "Legacy alias for target command"},
+					"output":         {Type: "string", Description: "Output format", Enum: []string{"text", "json", "ndjson"}},
+					"output_file":    {Type: "string", Description: "Output file path"},
+					"fields":         {Type: "array", Description: "Field mask", Items: &propertyDef{Type: "string", Description: "Field name"}},
+					"page":           {Type: "integer", Description: "Page number", Default: defaultPage},
+					"page_size":      {Type: "integer", Description: "Page size", Default: defaultPageSize},
+					"page_all":       {Type: "boolean", Description: "Return all pages", Default: false},
 				},
 			},
 		},
 	}
+}
+
+func commandDescriptorByName(name string) (commandDescriptor, bool) {
+	for _, descriptor := range commandDescriptors() {
+		if descriptor.Name == name {
+			return descriptor, true
+		}
+	}
+	return commandDescriptor{}, false
+}
+
+func commandOptionSet(command string) map[string]struct{} {
+	descriptor, ok := commandDescriptorByName(command)
+	if !ok {
+		return map[string]struct{}{}
+	}
+	options := map[string]struct{}{
+		"--help": {},
+		"-h":     {},
+	}
+	for _, option := range descriptor.Options {
+		options[option.Name] = struct{}{}
+		for _, alias := range option.Aliases {
+			options[alias] = struct{}{}
+		}
+	}
+	return options
 }

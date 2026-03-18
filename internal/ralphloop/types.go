@@ -97,13 +97,14 @@ type tailRequest struct {
 }
 
 type schemaRequest struct {
-	CommandName string   `json:"command,omitempty"`
-	Output      string   `json:"output,omitempty"`
-	OutputFile  string   `json:"output_file,omitempty"`
-	Fields      []string `json:"fields,omitempty"`
-	Page        int      `json:"page,omitempty"`
-	PageSize    int      `json:"page_size,omitempty"`
-	PageAll     bool     `json:"page_all,omitempty"`
+	TargetCommand string   `json:"target_command,omitempty"`
+	CommandName   string   `json:"command_name,omitempty"` // legacy alias for JSON payload compatibility
+	Output        string   `json:"output,omitempty"`
+	OutputFile    string   `json:"output_file,omitempty"`
+	Fields        []string `json:"fields,omitempty"`
+	Page          int      `json:"page,omitempty"`
+	PageSize      int      `json:"page_size,omitempty"`
+	PageAll       bool     `json:"page_all,omitempty"`
 }
 
 type parsedCommand struct {

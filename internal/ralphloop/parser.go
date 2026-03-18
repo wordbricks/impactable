@@ -10,6 +10,7 @@ import (
 
 type parseState struct {
 	command       string
+	seenOptions   map[string]struct{}
 	jsonSource    *string
 	output        *string
 	outputFile    *string
@@ -18,7 +19,6 @@ type parseState struct {
 	pageSize      *int
 	pageAll       bool
 	commandName   *string
-	selector      *string
 	lines         *int
 	follow        bool
 	raw           bool
@@ -35,7 +35,10 @@ type parseState struct {
 }
 
 func parseCLI(args []string, stdin io.Reader) (parsedCommand, error) {
-	state := parseState{command: commandMain}
+	state := parseState{
+		command:     commandMain,
+		seenOptions: map[string]struct{}{},
+	}
 	if len(args) > 0 {
 		if _, ok := knownCommands[args[0]]; ok {
 			state.command = args[0]
@@ -49,112 +52,144 @@ func parseCLI(args []string, stdin io.Reader) (parsedCommand, error) {
 		case "--help", "-h":
 			return parsedCommand{}, fmt.Errorf("help requested")
 		case "--json":
+			state.seenOptions["--json"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.jsonSource = &value
 		case "--output":
+			state.seenOptions["--output"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.output = &value
 		case "--output-file":
+			state.seenOptions["--output-file"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.outputFile = &value
 		case "--fields":
+			state.seenOptions["--fields"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.fields = &value
 		case "--page":
+			state.seenOptions["--page"] = struct{}{}
 			value, err := requireIntValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
+			}
+			if value <= 0 {
+				return parsedCommand{}, fmt.Errorf("%s requires a positive integer value", arg)
 			}
 			state.page = &value
 		case "--page-size":
+			state.seenOptions["--page-size"] = struct{}{}
 			value, err := requireIntValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
+			if value <= 0 {
+				return parsedCommand{}, fmt.Errorf("%s requires a positive integer value", arg)
+			}
 			state.pageSize = &value
 		case "--page-all":
+			state.seenOptions["--page-all"] = struct{}{}
 			state.pageAll = true
 		case "--command":
+			state.seenOptions["--command"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.commandName = &value
-		case "--selector":
-			value, err := requireValue(args, &i, arg)
-			if err != nil {
-				return parsedCommand{}, err
-			}
-			state.selector = &value
-		case "--lines":
+		case "--lines", "-n":
+			state.seenOptions["--lines"] = struct{}{}
 			value, err := requireIntValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
+			if value <= 0 {
+				return parsedCommand{}, fmt.Errorf("%s requires a positive integer value", arg)
+			}
 			state.lines = &value
-		case "--follow":
+		case "--follow", "-f":
+			state.seenOptions["--follow"] = struct{}{}
 			state.follow = true
 		case "--raw":
+			state.seenOptions["--raw"] = struct{}{}
 			state.raw = true
 		case "--model":
+			state.seenOptions["--model"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.model = &value
 		case "--base-branch":
+			state.seenOptions["--base-branch"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.baseBranch = &value
 		case "--max-iterations":
+			state.seenOptions["--max-iterations"] = struct{}{}
 			value, err := requireIntValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
+			if value <= 0 {
+				return parsedCommand{}, fmt.Errorf("%s requires a positive integer value", arg)
+			}
 			state.maxIterations = &value
 		case "--work-branch":
+			state.seenOptions["--work-branch"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.workBranch = &value
 		case "--timeout":
+			state.seenOptions["--timeout"] = struct{}{}
 			value, err := requireIntValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
+			if value <= 0 {
+				return parsedCommand{}, fmt.Errorf("%s requires a positive integer value", arg)
+			}
 			state.timeout = &value
 		case "--approval-policy":
+			state.seenOptions["--approval-policy"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.approval = &value
 		case "--sandbox":
+			state.seenOptions["--sandbox"] = struct{}{}
 			value, err := requireValue(args, &i, arg)
 			if err != nil {
 				return parsedCommand{}, err
 			}
 			state.sandbox = &value
 		case "--preserve-worktree":
+			state.seenOptions["--preserve-worktree"] = struct{}{}
 			state.preserve = true
 		case "--dry-run":
+			state.seenOptions["--dry-run"] = struct{}{}
 			state.dryRun = true
 		default:
+			if strings.HasPrefix(arg, "-") {
+				return parsedCommand{}, fmt.Errorf("unknown option %q", arg)
+			}
 			state.positionals = append(state.positionals, arg)
 		}
 	}
@@ -179,6 +214,9 @@ func parseCLI(args []string, stdin io.Reader) (parsedCommand, error) {
 func buildFromJSON(state parseState, body []byte) (parsedCommand, error) {
 	switch state.command {
 	case commandInit:
+		if err := validateOptionsForCommand(state, commandInit); err != nil {
+			return parsedCommand{}, err
+		}
 		req := initRequest{
 			Command:    commandInit,
 			BaseBranch: defaultBaseBranch,
@@ -203,25 +241,46 @@ func buildFromJSON(state parseState, body []byte) (parsedCommand, error) {
 		if strings.TrimSpace(req.BaseBranch) == "" {
 			req.BaseBranch = defaultBaseBranch
 		}
+		if len(state.positionals) > 0 {
+			return parsedCommand{}, fmt.Errorf("init does not accept positional arguments")
+		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
+		}
 		return parsedCommand{Kind: commandInit, Init: req}, nil
 	case commandList:
+		if err := validateOptionsForCommand(state, commandList); err != nil {
+			return parsedCommand{}, err
+		}
 		req := listRequest{Command: commandList, Page: defaultPage, PageSize: defaultPageSize}
 		if err := json.Unmarshal(body, &req); err != nil {
 			return parsedCommand{}, err
 		}
 		applyBaseOverrides(&req.Output, &req.OutputFile, &req.Fields, &req.Page, &req.PageSize, &req.PageAll, state)
-		if state.selector != nil {
-			req.Selector = *state.selector
+		if len(state.positionals) > 1 {
+			return parsedCommand{}, fmt.Errorf("ls accepts at most one selector positional argument")
+		}
+		if strings.TrimSpace(req.Selector) == "" && len(state.positionals) == 1 {
+			req.Selector = state.positionals[0]
+		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
 		}
 		return parsedCommand{Kind: commandList, List: req}, nil
 	case commandTail:
+		if err := validateOptionsForCommand(state, commandTail); err != nil {
+			return parsedCommand{}, err
+		}
 		req := tailRequest{Command: commandTail, Lines: defaultTailLines, Page: defaultPage, PageSize: defaultPageSize}
 		if err := json.Unmarshal(body, &req); err != nil {
 			return parsedCommand{}, err
 		}
 		applyBaseOverrides(&req.Output, &req.OutputFile, &req.Fields, &req.Page, &req.PageSize, &req.PageAll, state)
-		if state.selector != nil {
-			req.Selector = *state.selector
+		if len(state.positionals) > 1 {
+			return parsedCommand{}, fmt.Errorf("tail accepts at most one selector positional argument")
+		}
+		if strings.TrimSpace(req.Selector) == "" && len(state.positionals) == 1 {
+			req.Selector = state.positionals[0]
 		}
 		if state.lines != nil {
 			req.Lines = *state.lines
@@ -235,18 +294,43 @@ func buildFromJSON(state parseState, body []byte) (parsedCommand, error) {
 		if req.Lines <= 0 {
 			req.Lines = defaultTailLines
 		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
+		}
 		return parsedCommand{Kind: commandTail, Tail: req}, nil
 	case commandSchema:
+		if err := validateOptionsForCommand(state, commandSchema); err != nil {
+			return parsedCommand{}, err
+		}
 		req := schemaRequest{Page: defaultPage, PageSize: defaultPageSize}
 		if err := json.Unmarshal(body, &req); err != nil {
 			return parsedCommand{}, err
 		}
 		applyBaseOverrides(&req.Output, &req.OutputFile, &req.Fields, &req.Page, &req.PageSize, &req.PageAll, state)
 		if state.commandName != nil {
-			req.CommandName = *state.commandName
+			req.TargetCommand = *state.commandName
+		} else if len(state.positionals) > 0 {
+			req.TargetCommand = state.positionals[0]
+		}
+		if strings.TrimSpace(req.TargetCommand) == "" && strings.TrimSpace(req.CommandName) != "" {
+			req.TargetCommand = req.CommandName
+		}
+		if len(state.positionals) > 1 {
+			return parsedCommand{}, fmt.Errorf("schema accepts at most one command positional argument")
+		}
+		if strings.TrimSpace(req.TargetCommand) != "" {
+			if _, ok := commandDescriptorByName(req.TargetCommand); !ok {
+				return parsedCommand{}, fmt.Errorf("unknown command %q", req.TargetCommand)
+			}
+		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
 		}
 		return parsedCommand{Kind: commandSchema, Schema: req}, nil
 	default:
+		if err := validateOptionsForCommand(state, commandMain); err != nil {
+			return parsedCommand{}, err
+		}
 		req := mainRequest{
 			Command:        commandMain,
 			Model:          defaultModel,
@@ -298,6 +382,9 @@ func buildFromJSON(state parseState, body []byte) (parsedCommand, error) {
 		if strings.TrimSpace(req.WorkBranch) == "" {
 			req.WorkBranch = defaultWorkBranch(req.Prompt)
 		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
+		}
 		return parsedCommand{Kind: commandMain, Main: req}, nil
 	}
 }
@@ -305,6 +392,9 @@ func buildFromJSON(state parseState, body []byte) (parsedCommand, error) {
 func buildFromFlags(state parseState) (parsedCommand, error) {
 	switch state.command {
 	case commandInit:
+		if err := validateOptionsForCommand(state, commandInit); err != nil {
+			return parsedCommand{}, err
+		}
 		req := initRequest{
 			Command:    commandInit,
 			BaseBranch: defaultBaseBranch,
@@ -322,22 +412,39 @@ func buildFromFlags(state parseState) (parsedCommand, error) {
 		if strings.TrimSpace(req.WorkBranch) == "" {
 			req.WorkBranch = defaultInitBranch()
 		}
+		if len(state.positionals) > 0 {
+			return parsedCommand{}, fmt.Errorf("init does not accept positional arguments")
+		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
+		}
 		return parsedCommand{Kind: commandInit, Init: req}, nil
 	case commandList:
+		if err := validateOptionsForCommand(state, commandList); err != nil {
+			return parsedCommand{}, err
+		}
 		req := listRequest{Command: commandList, Page: defaultPage, PageSize: defaultPageSize}
 		applyBaseOverrides(&req.Output, &req.OutputFile, &req.Fields, &req.Page, &req.PageSize, &req.PageAll, state)
-		if state.selector != nil {
-			req.Selector = *state.selector
-		} else if len(state.positionals) > 0 {
+		if len(state.positionals) > 1 {
+			return parsedCommand{}, fmt.Errorf("ls accepts at most one selector positional argument")
+		}
+		if len(state.positionals) > 0 {
 			req.Selector = state.positionals[0]
+		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
 		}
 		return parsedCommand{Kind: commandList, List: req}, nil
 	case commandTail:
+		if err := validateOptionsForCommand(state, commandTail); err != nil {
+			return parsedCommand{}, err
+		}
 		req := tailRequest{Command: commandTail, Lines: defaultTailLines, Page: defaultPage, PageSize: defaultPageSize}
 		applyBaseOverrides(&req.Output, &req.OutputFile, &req.Fields, &req.Page, &req.PageSize, &req.PageAll, state)
-		if state.selector != nil {
-			req.Selector = *state.selector
-		} else if len(state.positionals) > 0 {
+		if len(state.positionals) > 1 {
+			return parsedCommand{}, fmt.Errorf("tail accepts at most one selector positional argument")
+		}
+		if len(state.positionals) > 0 {
 			req.Selector = state.positionals[0]
 		}
 		if state.lines != nil {
@@ -345,17 +452,37 @@ func buildFromFlags(state parseState) (parsedCommand, error) {
 		}
 		req.Follow = state.follow
 		req.Raw = state.raw
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
+		}
 		return parsedCommand{Kind: commandTail, Tail: req}, nil
 	case commandSchema:
+		if err := validateOptionsForCommand(state, commandSchema); err != nil {
+			return parsedCommand{}, err
+		}
 		req := schemaRequest{Page: defaultPage, PageSize: defaultPageSize}
 		applyBaseOverrides(&req.Output, &req.OutputFile, &req.Fields, &req.Page, &req.PageSize, &req.PageAll, state)
 		if state.commandName != nil {
-			req.CommandName = *state.commandName
+			req.TargetCommand = *state.commandName
 		} else if len(state.positionals) > 0 {
-			req.CommandName = state.positionals[0]
+			req.TargetCommand = state.positionals[0]
+		}
+		if len(state.positionals) > 1 {
+			return parsedCommand{}, fmt.Errorf("schema accepts at most one command positional argument")
+		}
+		if strings.TrimSpace(req.TargetCommand) != "" {
+			if _, ok := commandDescriptorByName(req.TargetCommand); !ok {
+				return parsedCommand{}, fmt.Errorf("unknown command %q", req.TargetCommand)
+			}
+		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
 		}
 		return parsedCommand{Kind: commandSchema, Schema: req}, nil
 	default:
+		if err := validateOptionsForCommand(state, commandMain); err != nil {
+			return parsedCommand{}, err
+		}
 		req := mainRequest{
 			Command:        commandMain,
 			Model:          defaultModel,
@@ -397,6 +524,9 @@ func buildFromFlags(state parseState) (parsedCommand, error) {
 		}
 		if strings.TrimSpace(req.WorkBranch) == "" {
 			req.WorkBranch = defaultWorkBranch(req.Prompt)
+		}
+		if err := validateBaseRequest(req.Output, req.Page, req.PageSize); err != nil {
+			return parsedCommand{}, err
 		}
 		return parsedCommand{Kind: commandMain, Main: req}, nil
 	}
@@ -467,4 +597,31 @@ func commandFromJSON(body []byte) (string, error) {
 		return "", fmt.Errorf("unknown command %q in JSON payload", command)
 	}
 	return command, nil
+}
+
+func validateOptionsForCommand(state parseState, command string) error {
+	allowed := commandOptionSet(command)
+	for option := range state.seenOptions {
+		if _, ok := allowed[option]; !ok {
+			return fmt.Errorf("%s does not support %s", command, option)
+		}
+	}
+	return nil
+}
+
+func validateBaseRequest(output string, page int, pageSize int) error {
+	if output != "" {
+		switch strings.TrimSpace(output) {
+		case "text", "json", "ndjson":
+		default:
+			return fmt.Errorf("invalid --output value %q (expected text, json, or ndjson)", output)
+		}
+	}
+	if page <= 0 {
+		return fmt.Errorf("page must be greater than 0")
+	}
+	if pageSize <= 0 {
+		return fmt.Errorf("page_size must be greater than 0")
+	}
+	return nil
 }

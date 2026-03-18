@@ -12,20 +12,42 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 | ID | Milestone | Status | Exit criteria |
 | --- | --- | --- | --- |
 | M1 | Gap assessment and contract baseline | done (2026-03-18) | Document current vs required behavior for `init`, main run, `ls`, `tail`, and `schema`; identify exact missing fields, modes, and option behavior from the spec and references. |
-| M2 | Command parsing and schema parity | not started | Ensure live schema descriptors and parser behavior fully align with required options, defaults, enums, payload schema, and command-level mutability/dry-run metadata. |
+| M2 | Command parsing and schema parity | done (2026-03-18) | Ensure live schema descriptors and parser behavior fully align with required options, defaults, enums, payload schema, and command-level mutability/dry-run metadata. |
 | M3 | Structured output contract hardening | not started | Enforce `text/json/ndjson` behavior across commands, keep structured errors in machine-readable modes, and enforce safe `--output-file` sandboxing to current working directory. |
 | M4 | Core command behavior completion | not started | Implement remaining runtime behavior gaps in `init`, main loop lifecycle events, `ls`, and `tail` (including pagination/field-mask semantics and NDJSON streaming expectations). |
 | M5 | Tests and regression coverage | not started | Add/extend tests for parser, schema output, output modes, command envelopes, and failure paths so the spec-critical contracts are protected. |
 | M6 | Final verification and handoff | not started | Run full test suite, summarize completed spec deltas, and produce a concise handoff with known limitations and next actions. |
 
 ## Current progress
-- Overall status: in progress (M1 complete, M2 next).
+- Overall status: in progress (M1-M2 complete, M3 next).
 - M1: completed baseline audit of command contracts against `SPEC.md` and vendored references.
-- M2: not started.
+- M2: completed parser/schema parity pass including stricter option validation and schema payload contract cleanup.
 - M3: not started.
 - M4: not started.
 - M5: not started.
 - M6: not started.
+
+## M2 completion summary (2026-03-18)
+- Enforced parser strictness:
+  - unknown options now fail fast instead of being treated as positionals,
+  - command-specific option compatibility is validated from live command descriptors (`commandOptionSet`),
+  - subcommands now enforce positional cardinality (`init` none, `ls`/`tail`/`schema` max one),
+  - positive integer validation added for `--page`, `--page-size`, `--lines`, `--max-iterations`, and `--timeout`,
+  - `--output` values are validated against `text|json|ndjson`.
+- Added alias parity:
+  - tail aliases `-n` (for `--lines`) and `-f` (for `--follow`) are supported in parser and exposed in schema descriptors.
+- Fixed schema payload contract collision:
+  - schema command now uses `target_command` in JSON payload instead of overloading `command`,
+  - preserved backward compatibility for legacy `command_name`.
+- Improved schema descriptor fidelity:
+  - dynamic `--output` default is represented as `text (tty) / json (non-tty)` in descriptors,
+  - schema raw payload now clearly includes `command: "schema"` discriminator plus `target_command`.
+- Added targeted tests for:
+  - parser alias handling,
+  - unknown/unsupported option rejection,
+  - output enum validation,
+  - schema target-command payload parsing/validation,
+  - descriptor alias and option-set behavior.
 
 ## M1 contract baseline (2026-03-18)
 ### Cross-command contract deltas
@@ -83,10 +105,10 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 - Keep changes incremental and milestone-scoped to preserve reviewability and bisectability.
 - Treat command schema descriptors and parser behavior as a single source of truth in M2 so schema and runtime cannot drift.
 - Resolve the `ls` JSON contract ambiguity in favor of one canonical envelope style, then lock it with tests and docs in M3/M5.
+- Keep `schema` raw JSON backward compatibility via `command_name` while standardizing on `target_command`.
 
 ## Remaining issues
 - The baseline exposed a spec tension for `ls` JSON shape (array vs paginated envelope) that must be resolved before implementation lock-in.
-- Command/payload naming collision in `schema` (`command` as discriminator vs selector) needs a breaking-but-contained fix in M2.
 - Structured error emission path is currently absent and affects every command in machine-readable modes.
 - Unknown edge-case failures in existing runtime/session orchestration are pending implementation analysis.
 - Some behaviors may require explicit tradeoffs if current repository architecture diverges from the upstream reference.

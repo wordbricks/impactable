@@ -60,10 +60,14 @@ func Run(args []string, cwd string, stdin io.Reader, stdout io.Writer, stderr io
 
 func runSchema(cwd string, req schemaRequest, stdout io.Writer) error {
 	descriptors := commandDescriptors()
-	if strings.TrimSpace(req.CommandName) != "" {
+	target := strings.TrimSpace(req.TargetCommand)
+	if target == "" {
+		target = strings.TrimSpace(req.CommandName)
+	}
+	if target != "" {
 		filtered := make([]commandDescriptor, 0, 1)
 		for _, descriptor := range descriptors {
-			if descriptor.Name == req.CommandName {
+			if descriptor.Name == target {
 				filtered = append(filtered, descriptor)
 			}
 		}
