@@ -15,16 +15,16 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 | M2 | Command parsing and schema parity | done (2026-03-18) | Ensure live schema descriptors and parser behavior fully align with required options, defaults, enums, payload schema, and command-level mutability/dry-run metadata. |
 | M3 | Structured output contract hardening | done (2026-03-18) | Enforce `text/json/ndjson` behavior across commands, keep structured errors in machine-readable modes, and enforce safe `--output-file` sandboxing to current working directory. |
 | M4 | Core command behavior completion | done (2026-03-18) | Implement remaining runtime behavior gaps in `init`, main loop lifecycle events, `ls`, and `tail` (including pagination/field-mask semantics and NDJSON streaming expectations). |
-| M5 | Tests and regression coverage | not started | Add/extend tests for parser, schema output, output modes, command envelopes, and failure paths so the spec-critical contracts are protected. |
+| M5 | Tests and regression coverage | done (2026-03-18) | Add/extend tests for parser, schema output, output modes, command envelopes, and failure paths so the spec-critical contracts are protected. |
 | M6 | Final verification and handoff | not started | Run full test suite, summarize completed spec deltas, and produce a concise handoff with known limitations and next actions. |
 
 ## Current progress
-- Overall status: in progress (M1-M4 complete, M5 next).
+- Overall status: in progress (M1-M5 complete, M6 next).
 - M1: completed baseline audit of command contracts against `SPEC.md` and vendored references.
 - M2: completed parser/schema parity pass including stricter option validation and schema payload contract cleanup.
 - M3: completed machine-readable error envelope handling and hardened output-file sandbox validation.
 - M4: completed core runtime behavior pass for `init`, `main`, `ls`, and `tail`.
-- M5: not started.
+- M5: completed regression coverage expansion for schema/read/dry-run output contracts and envelope behavior.
 - M6: not started.
 
 ## M2 completion summary (2026-03-18)
@@ -89,6 +89,20 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
   - read envelopes now use `total_items` and `total_pages`,
   - empty datasets no longer synthesize phantom `{}` items.
 
+## M5 completion summary (2026-03-18)
+- Added output-contract regression suite in `internal/ralphloop/output_contract_test.go`.
+- New coverage includes:
+  - `schema --output json` envelope shape + command filtering (`target_command`),
+  - `ls --output ndjson` emits one session record per line (non-envelope mode),
+  - `ls --page-all --output ndjson` emits paged envelopes with stable pagination fields,
+  - `tail --output json` includes required metadata envelope fields (`log_path`, totals, command),
+  - `init --dry-run --output json` includes `request` + `side_effects`,
+  - main `--dry-run --output json` includes `result` + `request` + `side_effects`.
+- Existing M2/M3 suites continue covering:
+  - parser strictness and schema parity (`parser_test.go`, `schema_test.go`),
+  - machine-readable failure envelopes and output-path hardening (`run_test.go`, `util_test.go`).
+- Verified with `go test ./...` after the new suite.
+
 ## M1 contract baseline (2026-03-18)
 ### Cross-command contract deltas
 | Area | Spec requirement | Current behavior | Gap to close |
@@ -148,6 +162,7 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 - Keep `schema` raw JSON backward compatibility via `command_name` while standardizing on `target_command`.
 - Use a single top-level failure envelope for machine-readable modes across commands to avoid mode-specific divergence.
 - Canonicalized `ls` behavior as: NDJSON emits per-session records by default, and page envelopes only for `--page-all`.
+- Keep high-value contract coverage in unit tests that do not require spawning Codex app-server, reserving end-to-end wiring validation for M6/manual verification.
 
 ## Remaining issues
 - The baseline exposed a spec tension for `ls` JSON shape (array vs paginated envelope) that must be resolved before implementation lock-in.
