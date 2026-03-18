@@ -12,7 +12,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 ## Milestones
 | ID | Milestone | Status | Exit criteria |
 | --- | --- | --- | --- |
-| M1 | CLI foundation and command surface | not started | Add Git impact CLI command surface and request/response contracts for `analyze`, `check-sources`, and report-scaffold output modes with machine-readable envelopes. |
+| M1 | CLI foundation and command surface | completed | Add Git impact CLI command surface and request/response contracts for `analyze`, `check-sources`, and report-scaffold output modes with machine-readable envelopes. |
 | M2 | Config loading and validation | not started | Implement config file loading for Velen/source mappings and analysis window settings with validation + deterministic defaults and unit tests. |
 | M3 | Velen integration abstractions and source checks | not started | Introduce Velen client abstractions (auth/org/source/query primitives), implement source discovery + required-source capability checks, and test with mock/fake executors. |
 | M4 | Single-PR impact analysis path | not started | Implement collector/linker/scorer MVP flow for one PR: fetch PR metadata, perform before/after metric comparison for one metric, and compute single-PR impact score. |
@@ -20,13 +20,29 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 | M6 | Test coverage, verification, and docs alignment | not started | Add coverage for new command paths and failure branches, run `go test ./...`, and update execution artifacts/docs needed for handoff. |
 
 ## Current progress
-- Overall status: not started.
-- M1: not started.
+- Overall status: in progress.
+- M1: completed.
 - M2: not started.
 - M3: not started.
 - M4: not started.
 - M5: not started.
 - M6: not started.
+
+## Milestone updates
+### M1 - CLI foundation and command surface (completed)
+- Added a new Go CLI entrypoint at `cmd/git-impact` plus root wrapper script `./git-impact`.
+- Introduced `internal/gitimpact` with explicit command parsing and command descriptors for:
+  - `analyze`
+  - `check-sources`
+  - `report-scaffold`
+  - `schema` (surface introspection helper)
+- Implemented machine-readable envelopes and structured error payloads for JSON/NDJSON flows.
+- Added request/response contract scaffolds for:
+  - analysis invocation contract (`analyze`)
+  - source-check contract (`check-sources`)
+  - report output-mode contract (`report-scaffold`, including terminal/json/markdown/html modes)
+- Added test coverage for parser behavior, command option compatibility, schema contracts, envelope output, and structured failure output.
+- Verification for this milestone: `go test ./...` passed.
 
 ## Key decisions
 - Treat `SPEC.md` Section 11 Phase 1 as the implementation boundary and defer Phase 2+ items.
@@ -34,6 +50,8 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Prefer deterministic, machine-readable command responses by default for automation-facing flows.
 - Ship a narrow but complete vertical slice (single-PR path) before broadening metric/feature support.
 - Preserve existing repository boundaries (`cmd/*` thin entrypoint, `internal/*` implementation logic).
+- Added a dedicated Go runtime boundary (`cmd/git-impact` -> `internal/gitimpact`) instead of extending `internal/ralphloop`.
+- Added `schema` command support early to make the command contract machine-discoverable for automation clients.
 
 ## Remaining issues
 - Final package layout for new Git impact modules should be validated against existing `internal/ralphloop` ownership to avoid boundary drift.
