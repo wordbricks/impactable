@@ -12,7 +12,7 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 ## Milestones
 | ID | Milestone | Status | Exit criteria |
 | --- | --- | --- | --- |
-| M1 | CLI and package foundation | not started | Add/confirm `cmd/git-impact` entrypoint and `internal/gitimpact` command scaffolding with structured command/result envelopes. |
+| M1 | CLI and package foundation | completed | Add/confirm `cmd/git-impact` entrypoint and `internal/gitimpact` command scaffolding with structured command/result envelopes. |
 | M2 | Config loading and validation | not started | Implement config file loading and validation for Velen org/source mappings and analysis windows, with deterministic defaults and tests. |
 | M3 | Velen integration abstractions and source checks | not started | Implement Velen client abstractions (`auth`, `org`, `source`, `query`) and `check-sources` flow with capability validation and tests. |
 | M4 | Single-PR impact analysis path | not started | Implement `analyze --pr` MVP flow (collect/link/score) for one metric with structured output and tests. |
@@ -20,8 +20,8 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 | M6 | Verification and plan/doc updates | not started | Run Go tests for new behaviors, close coverage gaps in failure branches, and update execution artifacts for handoff. |
 
 ## Current progress
-- Overall status: not started.
-- M1: not started.
+- Overall status: in progress.
+- M1: completed. `cmd/git-impact` thin entrypoint is in place, and success outputs now use one envelope shape (`command`, `status`, optional `request`/`config`, and `result`) across `analyze`, `check-sources`, `report-scaffold`, and `schema`.
 - M2: not started.
 - M3: not started.
 - M4: not started.
@@ -33,6 +33,7 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 - Preserve architecture boundaries (`cmd/git-impact` thin; `internal/gitimpact` behavior).
 - Treat machine-readable structured output as the primary contract for automation-facing commands.
 - Isolate Velen subprocess usage behind abstractions to keep tests deterministic.
+- Standardize successful command responses on a single envelope contract with a top-level `result` object so automation clients do not need command-specific top-level field parsing.
 
 ## Remaining issues
 - Confirm exact config schema shape and compatibility expectations for existing repository fixtures.

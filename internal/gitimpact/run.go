@@ -59,15 +59,14 @@ func runAnalyze(cwd string, req analyzeRequest, stdout io.Writer) error {
 		return err
 	}
 	format := resolveOutput(req.Output, stdout)
-	response := map[string]any{
-		"command": commandAnalyze,
-		"status":  "ok",
-		"request": map[string]any{
+	response := successEnvelope(
+		commandAnalyze,
+		map[string]any{
 			"config": resolvedConfig,
 			"pr":     req.PRNumber,
 			"since":  req.Since,
 		},
-		"config": map[string]any{
+		map[string]any{
 			"velen_org": cfg.Velen.Org,
 			"sources": map[string]any{
 				"github":    cfg.Velen.Sources.GitHub,
@@ -81,7 +80,7 @@ func runAnalyze(cwd string, req analyzeRequest, stdout io.Writer) error {
 				"min_confidence":     cfg.Analysis.MinConfidence,
 			},
 		},
-		"result": map[string]any{
+		map[string]any{
 			"phase":                  "phase-1-foundation",
 			"mode":                   "contract",
 			"analysis_path":          "single_pr",
@@ -90,7 +89,7 @@ func runAnalyze(cwd string, req analyzeRequest, stdout io.Writer) error {
 			"stages":                 stages,
 			"single_pr":              analysis,
 		},
-	}
+	)
 	text := renderAnalyzeText(req, resolvedConfig)
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, text)
 }
@@ -105,20 +104,21 @@ func runCheckSources(cwd string, req checkSourcesRequest, stdout io.Writer) erro
 		return err
 	}
 	format := resolveOutput(req.Output, stdout)
-	response := map[string]any{
-		"command": commandCheckSources,
-		"status":  "ok",
-		"request": map[string]any{
+	response := successEnvelope(
+		commandCheckSources,
+		map[string]any{
 			"config":         resolvedConfig,
 			"required_roles": req.RequiredRoles,
 		},
-		"config": map[string]any{
+		map[string]any{
 			"velen_org": cfg.Velen.Org,
 		},
-		"velen":   checkContext,
-		"summary": summary,
-		"sources": checks,
-	}
+		map[string]any{
+			"velen":   checkContext,
+			"summary": summary,
+			"sources": checks,
+		},
+	)
 	text := renderCheckSourcesText(resolvedConfig, checks, summary)
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, text)
 }
@@ -141,15 +141,14 @@ func runReportScaffold(cwd string, req reportScaffoldRequest, stdout io.Writer) 
 			Path:   scaffoldPathForMode(req.OutputDir, mode),
 		})
 	}
-	response := map[string]any{
-		"command": commandReportScaffold,
-		"status":  "ok",
-		"request": map[string]any{
+	response := successEnvelope(
+		commandReportScaffold,
+		map[string]any{
 			"config":     resolvedConfig,
 			"modes":      modes,
 			"output_dir": req.OutputDir,
 		},
-		"config": map[string]any{
+		map[string]any{
 			"velen_org": cfg.Velen.Org,
 			"analysis": map[string]any{
 				"before_window_days": cfg.Analysis.BeforeWindowDays,
@@ -157,8 +156,10 @@ func runReportScaffold(cwd string, req reportScaffoldRequest, stdout io.Writer) 
 				"cooldown_hours":     cfg.Analysis.CooldownHours,
 			},
 		},
-		"reports": scaffolds,
-	}
+		map[string]any{
+			"reports": scaffolds,
+		},
+	)
 	text := renderReportScaffoldText(req, resolvedConfig, scaffolds)
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, text)
 }
@@ -179,11 +180,7 @@ func runSchema(cwd string, req schemaRequest, stdout io.Writer) error {
 		descriptors = filtered
 	}
 	format := resolveOutput(req.Output, stdout)
-	response := map[string]any{
-		"command": commandSchema,
-		"status":  "ok",
-		"items":   descriptors,
-	}
+	response := successEnvelope(commandSchema, nil, nil, map[string]any{"items": descriptors})
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, renderSchemaText(descriptors))
 }
 
@@ -232,14 +229,7 @@ func outputHintFromArgs(args []string, stdout io.Writer) outputSelection {
 
 func emitFailure(cwd string, command string, format string, outputFile string, stdout io.Writer, stderr io.Writer, err error) int {
 	if strings.TrimSpace(format) == "json" || strings.TrimSpace(format) == "ndjson" {
-		payload := map[string]any{
-			"command": command,
-			"status":  "failed",
-			"error": structuredError{
-				Code:    "command_failed",
-				Message: err.Error(),
-			},
-		}
+		payload := failureEnvelope(command, err)
 		emitErr := emitSingle(cwd, format, outputFile, stdout, payload, mustJSON(payload))
 		if emitErr == nil {
 			return 1
@@ -374,5 +364,31 @@ func scaffoldPathForMode(outputDir string, mode string) string {
 		return filepath.Join(outputDir, "impact-report.html")
 	default:
 		return filepath.Join(outputDir, "impact-report.txt")
+	}
+}
+
+func successEnvelope(command string, request any, config any, result any) map[string]any {
+	envelope := map[string]any{
+		"command": command,
+		"status":  "ok",
+		"result":  result,
+	}
+	if request != nil {
+		envelope["request"] = request
+	}
+	if config != nil {
+		envelope["config"] = config
+	}
+	return envelope
+}
+
+func failureEnvelope(command string, err error) map[string]any {
+	return map[string]any{
+		"command": command,
+		"status":  "failed",
+		"error": structuredError{
+			Code:    "command_failed",
+			Message: err.Error(),
+		},
 	}
 }

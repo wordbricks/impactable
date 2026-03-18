@@ -106,11 +106,15 @@ func TestRunCheckSourcesJSONEnvelope(t *testing.T) {
 		if response["command"] != commandCheckSources {
 			t.Fatalf("unexpected command: %#v", response["command"])
 		}
-		sources, _ := response["sources"].([]any)
+		result, _ := response["result"].(map[string]any)
+		if result == nil {
+			t.Fatalf("expected result envelope")
+		}
+		sources, _ := result["sources"].([]any)
 		if len(sources) != 2 {
 			t.Fatalf("expected two source contracts, got %d", len(sources))
 		}
-		summary, _ := response["summary"].(map[string]any)
+		summary, _ := result["summary"].(map[string]any)
 		if summary["ready"] != true {
 			t.Fatalf("expected ready=true summary, got %#v", summary["ready"])
 		}
@@ -137,7 +141,11 @@ func TestRunReportScaffoldJSONEnvelope(t *testing.T) {
 	if response["command"] != commandReportScaffold {
 		t.Fatalf("unexpected command: %#v", response["command"])
 	}
-	reports, _ := response["reports"].([]any)
+	result, _ := response["result"].(map[string]any)
+	if result == nil {
+		t.Fatalf("expected result envelope")
+	}
+	reports, _ := result["reports"].([]any)
 	if len(reports) != 2 {
 		t.Fatalf("expected 2 report entries, got %d", len(reports))
 	}
@@ -162,7 +170,11 @@ func TestRunSchemaJSONEnvelope(t *testing.T) {
 	if response["command"] != commandSchema {
 		t.Fatalf("unexpected command: %#v", response["command"])
 	}
-	items, _ := response["items"].([]any)
+	result, _ := response["result"].(map[string]any)
+	if result == nil {
+		t.Fatalf("expected result envelope")
+	}
+	items, _ := result["items"].([]any)
 	if len(items) != 1 {
 		t.Fatalf("expected one schema item, got %d", len(items))
 	}
