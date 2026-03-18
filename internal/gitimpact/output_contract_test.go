@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -157,6 +158,69 @@ func TestRunReportScaffoldJSONEnvelope(t *testing.T) {
 	first, _ := reports[0].(map[string]any)
 	if first["mode"] != "markdown" {
 		t.Fatalf("expected first mode markdown, got %#v", first["mode"])
+	}
+	if first["status"] != "written" {
+		t.Fatalf("expected first report to be written, got %#v", first["status"])
+	}
+	markdownPath := filepath.Join(repoRoot, "reports", "impact-report.md")
+	markdownBody, err := os.ReadFile(markdownPath)
+	if err != nil {
+		t.Fatalf("expected markdown scaffold file at %s: %v", markdownPath, err)
+	}
+	if !strings.Contains(string(markdownBody), "Git Impact Report Scaffold") {
+		t.Fatalf("expected markdown scaffold marker, got %q", string(markdownBody))
+	}
+	htmlPath := filepath.Join(repoRoot, "reports", "impact-report.html")
+	htmlBody, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatalf("expected html scaffold file at %s: %v", htmlPath, err)
+	}
+	if !strings.Contains(string(htmlBody), "<!doctype html>") {
+		t.Fatalf("expected html scaffold marker, got %q", string(htmlBody))
+	}
+}
+
+func TestRunReportScaffoldTerminalAndJSONModes(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"report-scaffold", "--config", configPath, "--mode", "terminal", "--mode", "json", "--output-dir", "out/reports", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
+	}
+
+	response := map[string]any{}
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode output: %v (%q)", err, stdout.String())
+	}
+	result, _ := response["result"].(map[string]any)
+	if result == nil {
+		t.Fatalf("expected result envelope")
+	}
+	reports, _ := result["reports"].([]any)
+	if len(reports) != 2 {
+		t.Fatalf("expected 2 report entries, got %d", len(reports))
+	}
+	terminal, _ := reports[0].(map[string]any)
+	if terminal["mode"] != "terminal" || terminal["status"] != "ready" {
+		t.Fatalf("unexpected terminal scaffold contract: %#v", terminal)
+	}
+	jsonReport, _ := reports[1].(map[string]any)
+	if jsonReport["mode"] != "json" || jsonReport["status"] != "written" {
+		t.Fatalf("unexpected json scaffold contract: %#v", jsonReport)
+	}
+
+	jsonPath := filepath.Join(repoRoot, "out", "reports", "impact-report.json")
+	jsonBody, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("expected json scaffold file at %s: %v", jsonPath, err)
+	}
+	if !strings.Contains(string(jsonBody), "\"format\": \"json\"") {
+		t.Fatalf("expected json scaffold marker, got %q", string(jsonBody))
 	}
 }
 
