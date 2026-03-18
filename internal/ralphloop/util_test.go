@@ -44,3 +44,21 @@ func TestDeriveWorktreeIDStable(t *testing.T) {
 		t.Fatalf("expected stable worktree id, got %q and %q", first, second)
 	}
 }
+
+func TestExtractAgentTextPreservesCompletionTokenForLoopState(t *testing.T) {
+	t.Parallel()
+
+	item := map[string]any{
+		"text": "done\n\n<promise>COMPLETE</promise>",
+	}
+
+	raw := extractAgentTextRaw(item)
+	if !containsCompletionSignal(raw) {
+		t.Fatalf("expected raw text to preserve completion token, got %q", raw)
+	}
+
+	display := extractAgentTextDisplay(item)
+	if containsCompletionSignal(display) {
+		t.Fatalf("expected display text to strip completion token, got %q", display)
+	}
+}

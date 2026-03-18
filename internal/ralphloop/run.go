@@ -560,7 +560,7 @@ func agentMessage(notification jsonRPCNotification) string {
 	if strings.TrimSpace(notification.Method) != "item/completed" {
 		return ""
 	}
-	return extractAgentText(notification.Params["item"])
+	return extractAgentTextDisplay(notification.Params["item"])
 }
 
 func turnTimeout(seconds int) time.Duration {

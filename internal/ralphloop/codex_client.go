@@ -160,7 +160,7 @@ func (c *appServerClient) RunTurn(ctx context.Context, threadID string, prompt s
 			}
 			switch strings.TrimSpace(notification.Method) {
 			case "item/completed":
-				if text := extractAgentText(notification.Params["item"]); strings.TrimSpace(text) != "" {
+				if text := extractAgentTextRaw(notification.Params["item"]); strings.TrimSpace(text) != "" {
 					textParts = append(textParts, text)
 				}
 			case "turn/completed":
@@ -260,10 +260,10 @@ func (c *appServerClient) readLoop(reader io.Reader, channel string) {
 	c.readErr <- scanner.Err()
 }
 
-func extractAgentText(raw any) string {
+func extractAgentTextRaw(raw any) string {
 	record, _ := raw.(map[string]any)
 	if direct, ok := record["text"].(string); ok && strings.TrimSpace(direct) != "" {
-		return stripCompletionSignal(direct)
+		return direct
 	}
 	content, _ := record["content"].([]any)
 	parts := make([]string, 0, len(content))
@@ -273,5 +273,9 @@ func extractAgentText(raw any) string {
 			parts = append(parts, text)
 		}
 	}
-	return stripCompletionSignal(strings.Join(parts, "\n"))
+	return strings.Join(parts, "\n")
+}
+
+func extractAgentTextDisplay(raw any) string {
+	return stripCompletionSignal(extractAgentTextRaw(raw))
 }
