@@ -11,7 +11,7 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 ## Milestones
 | ID | Milestone | Status | Exit criteria |
 | --- | --- | --- | --- |
-| M1 | Gap assessment and contract baseline | not started | Document current vs required behavior for `init`, main run, `ls`, `tail`, and `schema`; identify exact missing fields, modes, and option behavior from the spec and references. |
+| M1 | Gap assessment and contract baseline | done (2026-03-18) | Document current vs required behavior for `init`, main run, `ls`, `tail`, and `schema`; identify exact missing fields, modes, and option behavior from the spec and references. |
 | M2 | Command parsing and schema parity | not started | Ensure live schema descriptors and parser behavior fully align with required options, defaults, enums, payload schema, and command-level mutability/dry-run metadata. |
 | M3 | Structured output contract hardening | not started | Enforce `text/json/ndjson` behavior across commands, keep structured errors in machine-readable modes, and enforce safe `--output-file` sandboxing to current working directory. |
 | M4 | Core command behavior completion | not started | Implement remaining runtime behavior gaps in `init`, main loop lifecycle events, `ls`, and `tail` (including pagination/field-mask semantics and NDJSON streaming expectations). |
@@ -19,22 +19,75 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 | M6 | Final verification and handoff | not started | Run full test suite, summarize completed spec deltas, and produce a concise handoff with known limitations and next actions. |
 
 ## Current progress
-- Overall status: not started.
-- M1: not started.
+- Overall status: in progress (M1 complete, M2 next).
+- M1: completed baseline audit of command contracts against `SPEC.md` and vendored references.
 - M2: not started.
 - M3: not started.
 - M4: not started.
 - M5: not started.
 - M6: not started.
 
+## M1 contract baseline (2026-03-18)
+### Cross-command contract deltas
+| Area | Spec requirement | Current behavior | Gap to close |
+| --- | --- | --- | --- |
+| Output mode validation | `--output` must be `text|json|ndjson` | Arbitrary strings accepted; unknown format falls back to JSON marshaling path | Validate enum and return structured machine-readable errors |
+| Structured machine-readable errors | `json`/`ndjson` must keep structured error envelopes | Errors are plain stderr strings for all modes | Centralize error envelope emission by mode |
+| `--output-file` sandboxing | Constrain to caller CWD after symlink resolution | Uses `filepath.Abs`/`Rel` only; no symlink resolution on target path | Resolve symlinks and reject escapes after canonicalization |
+| Input hardening | Reject control chars/path traversal/encoded separators/query fragments | No validation for selectors, branch names, output-file paths, or JSON fields | Add shared identifier/path sanitizers and parser enforcement |
+| Flag parsing strictness | Agent-first CLI should reject unknown options | Unknown flags become positionals silently | Add per-command unknown-flag rejection and positional cardinality checks |
+
+### `init` command deltas
+| Area | Spec requirement | Current behavior | Gap to close |
+| --- | --- | --- | --- |
+| Success JSON contract | Include `deps_installed` and `build_verified` booleans plus worktree metadata | Returns worktree metadata and `project`, but omits booleans | Add required booleans and keep stable top-level fields |
+| Runtime dirs | Ensure `.worktree/<id>/logs/` and `.worktree/<id>/tmp/` | Creates `logs/` and `run/`; no `tmp/` | Add `tmp/` creation |
+| Env initialization | Copy `.env.example` to `.env` when needed and set worktree-derived env vars | Not implemented | Implement idempotent env setup |
+| Clean git state | Ensure clean state and stash uncommitted changes in target worktree | Stash only when already in linked worktree path; reused external worktree path not fully normalized to spec flow | Normalize clean-state flow for both reused and newly-created worktrees |
+| `--dry-run` shape | Return exact request + planned side effects list | Returns worktree/project preview only | Add explicit side-effects list and executable request payload echo |
+
+### Main run command deltas
+| Area | Spec requirement | Current behavior | Gap to close |
+| --- | --- | --- | --- |
+| Output mode contract | Respect `text/json/ndjson` and produce one JSON object for `json` mode | Final emit is forced to JSON regardless of requested output | Respect requested mode for final terminal output |
+| NDJSON lifecycle richness | Stream lifecycle events and terminal event with stable fields (`phase`, `iteration`, etc.) | Emits limited events (`run.started`, `iteration.started`, `run.completed`) | Add missing phase/iteration completion/failure events with stable envelope fields |
+| Structured failure result | Return command-level structured failure object | Returns Go errors to stderr without JSON/NDJSON envelope | Emit `status:"failed"` + `error{code,message}` in machine-readable modes |
+| Loop safeguards | Context overflow compaction and failure retry semantics | Basic retry prompt on failed turn only; no compaction handling | Implement spec-aligned failure/compaction branches |
+
+### `ls` command deltas
+| Area | Spec requirement | Current behavior | Gap to close |
+| --- | --- | --- | --- |
+| NDJSON mode | Emit one session record per line | Emits one paginated envelope line containing `items` array | Emit per-session NDJSON records (or page envelopes only for `--page-all`, per selected contract) |
+| Schema/selector fidelity | Selector and output contract must be machine-friendly and validated | Selector accepted with no hardening; empty relative path serialized as empty string | Validate selector input and normalize empty optional fields |
+| Read contract consistency | Read commands should have consistent pagination metadata behavior | Uses page metadata envelope; aligns partially but differs from `ls` prose requirement ("JSON array") | Decide canonical `ls` contract and align schema/tests/docs consistently |
+
+### `tail` command deltas
+| Area | Spec requirement | Current behavior | Gap to close |
+| --- | --- | --- | --- |
+| JSON response shape | Include selected log metadata + line/record array | Returns paginated items without explicit log metadata fields | Add log metadata fields (`log_path`, selector, mode) to envelope |
+| `follow` NDJSON events | Structured per-line/event records with stable command fields | Streams raw `logRecord` objects only (`line/rendered/raw/line_number`) | Wrap follow records in command/event envelopes |
+| Pagination semantics | Support page/page-size/page-all consistently for read commands | Non-follow path paginates records; follow path ignores pagination controls | Validate/define follow-specific pagination behavior and enforce explicitly |
+
+### `schema` command deltas
+| Area | Spec requirement | Current behavior | Gap to close |
+| --- | --- | --- | --- |
+| Command schema fields | Include command name, description, positionals, options/aliases, required, defaults, enum, nested payload schema, mutability, dry-run | Includes most fields but no aliases, partial required metadata, and inconsistent defaults (e.g. `--output` default is `"text|json"`) | Add alias metadata, required flags, and correct default semantics |
+| Runtime parser parity | Schema must be generated from same live descriptors/parser semantics | Descriptors exist, but parser allows unknown flags and schema does not reflect permissive behavior | Tighten parser and keep schema descriptor-source authoritative |
+| `schema` payload shape | Must describe schema command and allow target command selection | `schemaRequest` uses `command` field as target selector, colliding with top-level command discriminator in raw JSON | Split selector field (e.g. `target_command`) from command discriminator and update parser/schema |
+| Read options behavior | `schema` supports `--fields`, pagination, and `--page-all` | `runSchema` ignores `--fields`, `--page`, `--page-size`, `--page-all` | Implement read-option behavior in schema output path |
+
 ## Key decisions
 - Use `specs/ralph-loop/SPEC.md` as the normative behavior contract.
 - Use `specs/ralph-loop/references/internal/ralphloop/*.go` as implementation guidance, but prefer local repository constraints when conflicts appear.
 - Prioritize output contract correctness and test-backed behavior before cosmetic text-mode refinements.
 - Keep changes incremental and milestone-scoped to preserve reviewability and bisectability.
+- Treat command schema descriptors and parser behavior as a single source of truth in M2 so schema and runtime cannot drift.
+- Resolve the `ls` JSON contract ambiguity in favor of one canonical envelope style, then lock it with tests and docs in M3/M5.
 
 ## Remaining issues
-- Detailed gap list is pending milestone M1.
+- The baseline exposed a spec tension for `ls` JSON shape (array vs paginated envelope) that must be resolved before implementation lock-in.
+- Command/payload naming collision in `schema` (`command` as discriminator vs selector) needs a breaking-but-contained fix in M2.
+- Structured error emission path is currently absent and affects every command in machine-readable modes.
 - Unknown edge-case failures in existing runtime/session orchestration are pending implementation analysis.
 - Some behaviors may require explicit tradeoffs if current repository architecture diverges from the upstream reference.
 
