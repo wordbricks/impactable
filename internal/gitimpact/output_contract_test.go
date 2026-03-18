@@ -90,6 +90,11 @@ func TestRunCheckSourcesJSONEnvelope(t *testing.T) {
 				{Key: "prod-warehouse", Provider: "bigquery", SupportsQuery: true},
 				{Key: "amplitude-prod", Provider: "amplitude", SupportsQuery: true},
 			},
+			showByKey: map[string]VelenSource{
+				"github-main":    {Key: "github-main", Provider: "github", SupportsQuery: true},
+				"prod-warehouse": {Key: "prod-warehouse", Provider: "bigquery", SupportsQuery: true},
+				"amplitude-prod": {Key: "amplitude-prod", Provider: "amplitude", SupportsQuery: true},
+			},
 		}
 	}, func() {
 		var stdout bytes.Buffer

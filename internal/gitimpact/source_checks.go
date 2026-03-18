@@ -54,18 +54,20 @@ func checkRequiredSources(ctx context.Context, cfg Config, requiredRoles []strin
 			continue
 		}
 
-		source, exists := sourcesByKey[sourceKey]
-		if !exists {
-			// Fallback to detail lookup in case source list omits results.
-			detail, showErr := client.ShowSource(ctx, sourceKey)
-			if showErr != nil {
+		_, existsInList := sourcesByKey[sourceKey]
+		source, showErr := client.ShowSource(ctx, sourceKey)
+		if showErr != nil {
+			if !existsInList {
 				check.Status = "missing"
 				check.Message = "source not found in velen source list"
 				summary.Missing++
-				checks = append(checks, check)
-				continue
+			} else {
+				check.Status = "failed"
+				check.Message = fmt.Sprintf("unable to verify source detail: %v", showErr)
+				summary.Failed++
 			}
-			source = detail
+			checks = append(checks, check)
+			continue
 		}
 		check.Provider = source.Provider
 		check.QuerySupported = source.SupportsQuery
