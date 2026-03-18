@@ -1,6 +1,7 @@
 package ralphloop
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -22,7 +23,10 @@ func TestResolveOutputPathAllowsNestedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveOutputPath returned error: %v", err)
 	}
-	expected := filepath.Join(root, "artifacts", "result.json")
+	expected, err := canonicalPathWithMissingTail(filepath.Join(root, "artifacts", "result.json"))
+	if err != nil {
+		t.Fatalf("canonicalPathWithMissingTail returned error: %v", err)
+	}
 	if path != expected {
 		t.Fatalf("expected %q, got %q", expected, path)
 	}
@@ -60,5 +64,46 @@ func TestExtractAgentTextPreservesCompletionTokenForLoopState(t *testing.T) {
 	display := extractAgentTextDisplay(item)
 	if containsCompletionSignal(display) {
 		t.Fatalf("expected display text to strip completion token, got %q", display)
+	}
+}
+
+func TestResolveOutputPathRejectsSymlinkEscape(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	outside := t.TempDir()
+	linkPath := filepath.Join(root, "link-outside")
+	if err := os.Symlink(outside, linkPath); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	if _, err := resolveOutputPath(root, filepath.Join("link-outside", "result.json")); err == nil {
+		t.Fatal("expected symlink escape to fail")
+	}
+}
+
+func TestResolveOutputPathAllowsSymlinkInsideRoot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	inside := filepath.Join(root, "artifacts")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	linkPath := filepath.Join(root, "link-inside")
+	if err := os.Symlink(inside, linkPath); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	resolved, err := resolveOutputPath(root, filepath.Join("link-inside", "result.json"))
+	if err != nil {
+		t.Fatalf("resolveOutputPath returned error: %v", err)
+	}
+	expected, err := canonicalPathWithMissingTail(filepath.Join(inside, "result.json"))
+	if err != nil {
+		t.Fatalf("canonicalPathWithMissingTail returned error: %v", err)
+	}
+	if resolved != expected {
+		t.Fatalf("expected %q, got %q", expected, resolved)
 	}
 }

@@ -14,48 +14,134 @@ import (
 func Run(args []string, cwd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	parsed, err := parseCLI(args, stdin)
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, err.Error())
-		return 1
+		hint := outputHintFromArgs(args, stdout)
+		return emitFailure(cwd, hint.Command, hint.Format, hint.OutputFile, stdout, stderr, err)
 	}
+	selected := selectedOutputForParsed(parsed, stdout)
 
 	switch parsed.Kind {
 	case commandSchema:
 		if err := runSchema(cwd, parsed.Schema, stdout); err != nil {
-			_, _ = fmt.Fprintln(stderr, err.Error())
-			return 1
+			return emitFailure(cwd, selected.Command, selected.Format, selected.OutputFile, stdout, stderr, err)
 		}
 		return 0
 	}
 
 	repoRoot, err := resolveRepoRoot(cwd)
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, err.Error())
-		return 1
+		return emitFailure(cwd, selected.Command, selected.Format, selected.OutputFile, stdout, stderr, err)
 	}
 
 	switch parsed.Kind {
 	case commandInit:
 		if err := runInit(context.Background(), cwd, repoRoot, parsed.Init, stdout, stderr); err != nil {
-			_, _ = fmt.Fprintln(stderr, err.Error())
-			return 1
+			return emitFailure(cwd, selected.Command, selected.Format, selected.OutputFile, stdout, stderr, err)
 		}
 	case commandList:
 		if err := runList(cwd, repoRoot, parsed.List, stdout); err != nil {
-			_, _ = fmt.Fprintln(stderr, err.Error())
-			return 1
+			return emitFailure(cwd, selected.Command, selected.Format, selected.OutputFile, stdout, stderr, err)
 		}
 	case commandTail:
 		if err := runTail(context.Background(), cwd, repoRoot, parsed.Tail, stdout); err != nil {
-			_, _ = fmt.Fprintln(stderr, err.Error())
-			return 1
+			return emitFailure(cwd, selected.Command, selected.Format, selected.OutputFile, stdout, stderr, err)
 		}
 	default:
 		if err := runMain(context.Background(), cwd, repoRoot, parsed.Main, stdout, stderr); err != nil {
-			_, _ = fmt.Fprintln(stderr, err.Error())
-			return 1
+			return emitFailure(cwd, selected.Command, selected.Format, selected.OutputFile, stdout, stderr, err)
 		}
 	}
 	return 0
+}
+
+type outputSelection struct {
+	Command    string
+	Format     string
+	OutputFile string
+}
+
+func selectedOutputForParsed(parsed parsedCommand, stdout io.Writer) outputSelection {
+	switch parsed.Kind {
+	case commandInit:
+		return outputSelection{
+			Command:    commandInit,
+			Format:     resolveOutput(parsed.Init.Output, stdout),
+			OutputFile: parsed.Init.OutputFile,
+		}
+	case commandList:
+		return outputSelection{
+			Command:    commandList,
+			Format:     resolveOutput(parsed.List.Output, stdout),
+			OutputFile: parsed.List.OutputFile,
+		}
+	case commandTail:
+		return outputSelection{
+			Command:    commandTail,
+			Format:     resolveOutput(parsed.Tail.Output, stdout),
+			OutputFile: parsed.Tail.OutputFile,
+		}
+	case commandSchema:
+		return outputSelection{
+			Command:    commandSchema,
+			Format:     resolveOutput(parsed.Schema.Output, stdout),
+			OutputFile: parsed.Schema.OutputFile,
+		}
+	default:
+		return outputSelection{
+			Command:    commandMain,
+			Format:     resolveOutput(parsed.Main.Output, stdout),
+			OutputFile: parsed.Main.OutputFile,
+		}
+	}
+}
+
+func outputHintFromArgs(args []string, stdout io.Writer) outputSelection {
+	selection := outputSelection{
+		Command: commandMain,
+		Format:  resolveOutput("", stdout),
+	}
+	if len(args) > 0 {
+		if _, ok := knownCommands[args[0]]; ok {
+			selection.Command = args[0]
+		}
+	}
+	for index := 0; index < len(args); index++ {
+		switch args[index] {
+		case "--output":
+			if index+1 < len(args) {
+				selection.Format = args[index+1]
+				index++
+			}
+		case "--output-file":
+			if index+1 < len(args) {
+				selection.OutputFile = args[index+1]
+				index++
+			}
+		}
+	}
+	return selection
+}
+
+func emitFailure(cwd string, command string, format string, outputFile string, stdout io.Writer, stderr io.Writer, err error) int {
+	if strings.TrimSpace(format) == "json" || strings.TrimSpace(format) == "ndjson" {
+		payload := map[string]any{
+			"command": command,
+			"status":  "failed",
+			"error": structuredError{
+				Code:    "command_failed",
+				Message: err.Error(),
+			},
+		}
+		text := mustJSON(payload)
+		emitErr := emitSingle(cwd, format, outputFile, stdout, payload, text)
+		if emitErr == nil {
+			return 1
+		}
+		// If machine-readable rendering itself fails, fallback to stderr as process-level failure.
+		_, _ = fmt.Fprintln(stderr, emitErr.Error())
+		return 1
+	}
+	_, _ = fmt.Fprintln(stderr, err.Error())
+	return 1
 }
 
 func runSchema(cwd string, req schemaRequest, stdout io.Writer) error {
@@ -160,7 +246,9 @@ func runInit(ctx context.Context, cwd string, repoRoot string, req initRequest, 
 		return emitSingle(cwd, format, req.OutputFile, stdout, envelope, mustJSON(envelope))
 	}
 
-	_, _ = fmt.Fprintln(stderr, "Preparing worktree")
+	if format == "text" {
+		_, _ = fmt.Fprintln(stderr, "Preparing worktree")
+	}
 	worktree, commands, err := prepareWorktree(ctx, cwd, repoRoot, req)
 	if err != nil {
 		return err
