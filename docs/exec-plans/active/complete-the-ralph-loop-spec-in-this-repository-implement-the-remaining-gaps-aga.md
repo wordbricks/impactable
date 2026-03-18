@@ -14,16 +14,16 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 | M1 | Gap assessment and contract baseline | done (2026-03-18) | Document current vs required behavior for `init`, main run, `ls`, `tail`, and `schema`; identify exact missing fields, modes, and option behavior from the spec and references. |
 | M2 | Command parsing and schema parity | done (2026-03-18) | Ensure live schema descriptors and parser behavior fully align with required options, defaults, enums, payload schema, and command-level mutability/dry-run metadata. |
 | M3 | Structured output contract hardening | done (2026-03-18) | Enforce `text/json/ndjson` behavior across commands, keep structured errors in machine-readable modes, and enforce safe `--output-file` sandboxing to current working directory. |
-| M4 | Core command behavior completion | not started | Implement remaining runtime behavior gaps in `init`, main loop lifecycle events, `ls`, and `tail` (including pagination/field-mask semantics and NDJSON streaming expectations). |
+| M4 | Core command behavior completion | done (2026-03-18) | Implement remaining runtime behavior gaps in `init`, main loop lifecycle events, `ls`, and `tail` (including pagination/field-mask semantics and NDJSON streaming expectations). |
 | M5 | Tests and regression coverage | not started | Add/extend tests for parser, schema output, output modes, command envelopes, and failure paths so the spec-critical contracts are protected. |
 | M6 | Final verification and handoff | not started | Run full test suite, summarize completed spec deltas, and produce a concise handoff with known limitations and next actions. |
 
 ## Current progress
-- Overall status: in progress (M1-M3 complete, M4 next).
+- Overall status: in progress (M1-M4 complete, M5 next).
 - M1: completed baseline audit of command contracts against `SPEC.md` and vendored references.
 - M2: completed parser/schema parity pass including stricter option validation and schema payload contract cleanup.
 - M3: completed machine-readable error envelope handling and hardened output-file sandbox validation.
-- M4: not started.
+- M4: completed core runtime behavior pass for `init`, `main`, `ls`, and `tail`.
 - M5: not started.
 - M6: not started.
 
@@ -65,6 +65,29 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 - Added regression tests for:
   - JSON and NDJSON structured failures at parse time and runtime,
   - symlink escape rejection and in-root symlink allowance for output path resolution.
+
+## M4 completion summary (2026-03-18)
+- Completed `init` runtime contract updates:
+  - runtime directories now include `.worktree/<id>/tmp/` in addition to `logs/` and `run/`,
+  - `init` success output now includes `deps_installed` and `build_verified` booleans,
+  - `.env.example` → `.env` bootstrapping is now performed when `.env` is absent,
+  - `DISCODE_WORKTREE_ID` and `DISCODE_RUNTIME_ROOT` are set during preparation.
+- Improved dry-run behavior for mutating commands:
+  - `init --dry-run` now returns explicit `request` and `side_effects` blocks,
+  - main command dry-run now returns an executable request echo plus side-effect plan.
+- Implemented richer main-loop lifecycle event streaming in NDJSON:
+  - emits `phase.started`, `phase.completed`, and `phase.failed` around setup/coding/pr phases,
+  - emits `iteration.started`, `iteration.completed`, and `iteration.failed` in coding loop,
+  - run completion now respects requested output format (`json`/`text` single object, `ndjson` terminal event stream),
+  - NDJSON streaming honors `--output-file` by mirroring stream output to file and stdout.
+- Updated read command runtime behavior:
+  - `ls --output ndjson` now emits one session object per line,
+  - `ls --page-all --output ndjson` emits one page envelope per line with consistent pagination metadata,
+  - `tail --output json` now includes log metadata (`log_path`, selector, match count, pagination totals),
+  - `tail --follow` now emits structured NDJSON event records (`command`, `event`, `status`, `ts`, `log_path`, line payload).
+- Pagination metadata normalization:
+  - read envelopes now use `total_items` and `total_pages`,
+  - empty datasets no longer synthesize phantom `{}` items.
 
 ## M1 contract baseline (2026-03-18)
 ### Cross-command contract deltas
@@ -124,9 +147,12 @@ Make this CLI materially closer to Ralph Loop spec-complete by implementing the 
 - Resolve the `ls` JSON contract ambiguity in favor of one canonical envelope style, then lock it with tests and docs in M3/M5.
 - Keep `schema` raw JSON backward compatibility via `command_name` while standardizing on `target_command`.
 - Use a single top-level failure envelope for machine-readable modes across commands to avoid mode-specific divergence.
+- Canonicalized `ls` behavior as: NDJSON emits per-session records by default, and page envelopes only for `--page-all`.
 
 ## Remaining issues
 - The baseline exposed a spec tension for `ls` JSON shape (array vs paginated envelope) that must be resolved before implementation lock-in.
+- `ls --output json` remains envelope-based rather than raw array to preserve cross-read-command pagination consistency; finalize this contract in M5 tests/docs.
+- Coding loop context compaction (`ContextWindowExceeded` → `thread/compact/start`) is still pending and should be covered in M5/M6 follow-up.
 - Unknown edge-case failures in existing runtime/session orchestration are pending implementation analysis.
 - Some behaviors may require explicit tradeoffs if current repository architecture diverges from the upstream reference.
 

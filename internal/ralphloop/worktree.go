@@ -77,9 +77,17 @@ func prepareWorktree(ctx context.Context, cwd string, repoRoot string, req initR
 	if err := os.MkdirAll(filepath.Join(info.RuntimeRoot, "logs"), 0o755); err != nil {
 		return worktreeInfo{}, projectCommands{}, err
 	}
+	if err := os.MkdirAll(filepath.Join(info.RuntimeRoot, "tmp"), 0o755); err != nil {
+		return worktreeInfo{}, projectCommands{}, err
+	}
 	if err := os.MkdirAll(filepath.Join(info.RuntimeRoot, "run"), 0o755); err != nil {
 		return worktreeInfo{}, projectCommands{}, err
 	}
+	if err := initializeEnvConfig(info); err != nil {
+		return worktreeInfo{}, projectCommands{}, err
+	}
+	_ = os.Setenv("DISCODE_WORKTREE_ID", info.WorktreeID)
+	_ = os.Setenv("DISCODE_RUNTIME_ROOT", info.RuntimeRoot)
 
 	commands, err := detectProjectCommands(info.WorktreePath)
 	if err != nil {
@@ -149,4 +157,19 @@ func cleanupWorktree(ctx context.Context, repoRoot string, worktree worktreeInfo
 	}
 	_, err := runCommand(ctx, repoRoot, "git", "worktree", "remove", "--force", worktree.WorktreePath)
 	return err
+}
+
+func initializeEnvConfig(info worktreeInfo) error {
+	envExample := filepath.Join(info.WorktreePath, ".env.example")
+	envFile := filepath.Join(info.WorktreePath, ".env")
+	if fileExists(envExample) && !fileExists(envFile) {
+		body, err := os.ReadFile(envExample)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(envFile, body, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

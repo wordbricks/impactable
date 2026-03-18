@@ -176,19 +176,78 @@ func runList(cwd string, repoRoot string, req listRequest, stdout io.Writer) err
 	records := make([]map[string]any, 0, len(sessions))
 	for _, session := range sessions {
 		body := map[string]any{
-			"pid":                    session.PID,
-			"worktree_id":            session.WorktreeID,
-			"worktree_path":          session.WorktreePath,
-			"work_branch":            session.WorkBranch,
-			"log_path":               session.LogPath,
-			"started_at":             session.StartedAt,
-			"relative_worktree_path": session.RelativeWorktreePath,
-			"relative_log_path":      session.RelativeLogPath,
+			"pid":           session.PID,
+			"worktree_id":   session.WorktreeID,
+			"worktree_path": session.WorktreePath,
+			"work_branch":   session.WorkBranch,
+			"log_path":      session.LogPath,
+			"started_at":    session.StartedAt,
+		}
+		if strings.TrimSpace(session.RelativeWorktreePath) != "" {
+			body["relative_worktree_path"] = session.RelativeWorktreePath
+		}
+		if strings.TrimSpace(session.RelativeLogPath) != "" {
+			body["relative_log_path"] = session.RelativeLogPath
 		}
 		records = append(records, applyFieldMaskMap(body, req.Fields))
 	}
 	format := resolveOutput(req.Output, stdout)
-	return emitReadResult(cwd, format, req.OutputFile, stdout, commandList, records, req.Page, req.PageSize, req.PageAll, renderSessionText(sessions))
+	pages := paginate(records, req.PageSize)
+	page, selected := pageSelection(pages, req.Page)
+
+	if format == "ndjson" && !req.PageAll {
+		if len(selected) == 0 {
+			return emitPayload(cwd, req.OutputFile, stdout, "")
+		}
+		lines := make([]string, 0, len(selected))
+		for _, record := range selected {
+			body, _ := json.Marshal(record)
+			lines = append(lines, string(body))
+		}
+		return emitPayload(cwd, req.OutputFile, stdout, strings.Join(lines, "\n")+"\n")
+	}
+
+	if req.PageAll && format == "ndjson" {
+		lines := make([]string, 0, len(pages))
+		for index, pageItems := range pages {
+			envelope := map[string]any{
+				"command":     commandList,
+				"status":      "ok",
+				"page":        index + 1,
+				"page_size":   normalizePageSize(req.PageSize),
+				"total_items": len(records),
+				"total_pages": len(pages),
+				"page_all":    true,
+				"items":       pageItems,
+			}
+			body, _ := json.Marshal(envelope)
+			lines = append(lines, string(body))
+		}
+		return emitPayload(cwd, req.OutputFile, stdout, strings.Join(lines, "\n")+"\n")
+	}
+
+	if req.PageAll {
+		envelope := map[string]any{
+			"command":     commandList,
+			"status":      "ok",
+			"page_all":    true,
+			"total_items": len(records),
+			"total_pages": len(pages),
+			"items":       records,
+		}
+		return emitSingle(cwd, format, req.OutputFile, stdout, envelope, renderSessionText(sessions))
+	}
+
+	envelope := map[string]any{
+		"command":     commandList,
+		"status":      "ok",
+		"page":        page,
+		"page_size":   normalizePageSize(req.PageSize),
+		"total_items": len(records),
+		"total_pages": len(pages),
+		"items":       selected,
+	}
+	return emitSingle(cwd, format, req.OutputFile, stdout, envelope, renderSessionText(sessions))
 }
 
 func runTail(ctx context.Context, cwd string, repoRoot string, req tailRequest, stdout io.Writer) error {
@@ -200,13 +259,38 @@ func runTail(ctx context.Context, cwd string, repoRoot string, req tailRequest, 
 	if len(paths) == 0 {
 		return fmt.Errorf("no Ralph Loop logs found")
 	}
+	selectedLog := paths[0]
 	if req.Follow {
-		if format != "ndjson" {
-			format = "ndjson"
+		output := format
+		if output != "ndjson" {
+			output = "ndjson"
 		}
-		return followLog(ctx, paths[0], req.Lines, req.Raw, stdout)
+		streamWriter, closeFn, err := openStreamWriter(cwd, req.OutputFile, stdout, output)
+		if err != nil {
+			return err
+		}
+		defer closeFn()
+		return followLog(ctx, selectedLog, req.Lines, req.Raw, func(record logRecord) error {
+			event := map[string]any{
+				"command":     commandTail,
+				"event":       "tail.line",
+				"status":      "running",
+				"ts":          nowUTC().Format(time.RFC3339),
+				"log_path":    selectedLog,
+				"line":        record.Line,
+				"rendered":    record.Rendered,
+				"raw":         record.Raw,
+				"line_number": record.LineNumber,
+			}
+			body, marshalErr := json.Marshal(event)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			_, writeErr := fmt.Fprintln(streamWriter, string(body))
+			return writeErr
+		})
 	}
-	records, err := readTail(paths[0], req.Lines, req.Raw)
+	records, err := readTail(selectedLog, req.Lines, req.Raw)
 	if err != nil {
 		return err
 	}
@@ -221,11 +305,58 @@ func runTail(ctx context.Context, cwd string, repoRoot string, req tailRequest, 
 		items = append(items, applyFieldMaskMap(body, req.Fields))
 	}
 	textLines := make([]string, 0, len(records)+1)
-	textLines = append(textLines, paths[0])
+	textLines = append(textLines, selectedLog)
 	for _, record := range records {
 		textLines = append(textLines, record.Rendered)
 	}
-	return emitReadResult(cwd, format, req.OutputFile, stdout, commandTail, items, req.Page, req.PageSize, req.PageAll, strings.Join(textLines, "\n"))
+
+	pages := paginate(items, req.PageSize)
+	page, selected := pageSelection(pages, req.Page)
+	metadata := map[string]any{
+		"command":      commandTail,
+		"status":       "ok",
+		"log_path":     selectedLog,
+		"selector":     req.Selector,
+		"raw":          req.Raw,
+		"follow":       false,
+		"requested":    req.Lines,
+		"total_items":  len(items),
+		"total_pages":  len(pages),
+		"matched_logs": len(paths),
+	}
+	if req.PageAll && format == "ndjson" {
+		lines := make([]string, 0, len(pages))
+		for index, pageItems := range pages {
+			envelope := map[string]any{}
+			for key, value := range metadata {
+				envelope[key] = value
+			}
+			envelope["page"] = index + 1
+			envelope["page_size"] = normalizePageSize(req.PageSize)
+			envelope["page_all"] = true
+			envelope["items"] = pageItems
+			body, _ := json.Marshal(envelope)
+			lines = append(lines, string(body))
+		}
+		return emitPayload(cwd, req.OutputFile, stdout, strings.Join(lines, "\n")+"\n")
+	}
+	if req.PageAll {
+		envelope := map[string]any{}
+		for key, value := range metadata {
+			envelope[key] = value
+		}
+		envelope["page_all"] = true
+		envelope["items"] = items
+		return emitSingle(cwd, format, req.OutputFile, stdout, envelope, strings.Join(textLines, "\n"))
+	}
+	envelope := map[string]any{}
+	for key, value := range metadata {
+		envelope[key] = value
+	}
+	envelope["page"] = page
+	envelope["page_size"] = normalizePageSize(req.PageSize)
+	envelope["items"] = selected
+	return emitSingle(cwd, format, req.OutputFile, stdout, envelope, strings.Join(textLines, "\n"))
 }
 
 func runInit(ctx context.Context, cwd string, repoRoot string, req initRequest, stdout io.Writer, stderr io.Writer) error {
@@ -242,6 +373,21 @@ func runInit(ctx context.Context, cwd string, repoRoot string, req initRequest, 
 			"worktree":  worktree,
 			"project":   commands,
 			"repo_root": repoRoot,
+			"request": map[string]any{
+				"command":     commandInit,
+				"base_branch": req.BaseBranch,
+				"work_branch": req.WorkBranch,
+				"dry_run":     true,
+				"output":      req.Output,
+				"output_file": req.OutputFile,
+			},
+			"side_effects": []map[string]any{
+				{"action": "git.worktree.prepare", "writes": false},
+				{"action": "git.clean_state", "writes": false},
+				{"action": "deps.install", "writes": false},
+				{"action": "build.verify", "writes": false},
+				{"action": "runtime.dirs.ensure", "writes": false},
+			},
 		}
 		return emitSingle(cwd, format, req.OutputFile, stdout, envelope, mustJSON(envelope))
 	}
@@ -254,14 +400,16 @@ func runInit(ctx context.Context, cwd string, repoRoot string, req initRequest, 
 		return err
 	}
 	envelope := map[string]any{
-		"command":       commandInit,
-		"status":        "ok",
-		"worktree_id":   worktree.WorktreeID,
-		"worktree_path": worktree.WorktreePath,
-		"work_branch":   worktree.WorkBranch,
-		"base_branch":   worktree.BaseBranch,
-		"runtime_root":  worktree.RuntimeRoot,
-		"project":       commands,
+		"command":        commandInit,
+		"status":         "ok",
+		"worktree_id":    worktree.WorktreeID,
+		"worktree_path":  worktree.WorktreePath,
+		"work_branch":    worktree.WorkBranch,
+		"base_branch":    worktree.BaseBranch,
+		"runtime_root":   worktree.RuntimeRoot,
+		"deps_installed": true,
+		"build_verified": true,
+		"project":        commands,
 	}
 	return emitSingle(cwd, format, req.OutputFile, stdout, envelope, mustJSON(envelope))
 }
@@ -293,6 +441,27 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 		envelope := map[string]any{
 			"result":  result,
 			"project": commands,
+			"request": map[string]any{
+				"command":           commandMain,
+				"prompt":            req.Prompt,
+				"model":             req.Model,
+				"base_branch":       req.BaseBranch,
+				"max_iterations":    req.MaxIterations,
+				"work_branch":       req.WorkBranch,
+				"timeout":           req.TimeoutSeconds,
+				"approval_policy":   req.ApprovalPolicy,
+				"sandbox":           req.Sandbox,
+				"preserve_worktree": req.PreserveTree,
+				"dry_run":           true,
+				"output":            req.Output,
+				"output_file":       req.OutputFile,
+			},
+			"side_effects": []map[string]any{
+				{"action": "init.prepare_worktree", "writes": false},
+				{"action": "setup_agent.turn", "writes": false},
+				{"action": "coding_loop.turns", "writes": false},
+				{"action": "pr_agent.turn", "writes": false},
+			},
 		}
 		return emitSingle(cwd, format, req.OutputFile, stdout, envelope, mustJSON(envelope))
 	}
@@ -319,12 +488,32 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 		return err
 	}
 
-	emitEvent(stdout, format, newEvent(commandMain, "run.started"), map[string]any{
+	eventWriter := stdout
+	closeEventWriter := func() {}
+	if format == "ndjson" {
+		streamWriter, closeFn, err := openStreamWriter(cwd, req.OutputFile, stdout, format)
+		if err != nil {
+			return err
+		}
+		eventWriter = streamWriter
+		closeEventWriter = closeFn
+	}
+	defer closeEventWriter()
+
+	emitEvent(eventWriter, format, newEvent(commandMain, "run.started"), map[string]any{
 		"status":        "running",
 		"worktree_path": worktree.WorktreePath,
 		"work_branch":   worktree.WorkBranch,
 		"log_path":      logPath,
 		"plan_path":     planPath,
+	})
+	emitEvent(eventWriter, format, newEvent(commandMain, "phase.started"), map[string]any{
+		"status":        "running",
+		"phase":         "setup",
+		"worktree_path": worktree.WorktreePath,
+		"work_branch":   worktree.WorkBranch,
+		"plan_path":     planPath,
+		"log_path":      logPath,
 	})
 
 	setupClient, err := newAppServerClient(logger)
@@ -341,7 +530,7 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 			event.WorktreePath = worktree.WorktreePath
 			event.WorkBranch = worktree.WorkBranch
 			event.PlanPath = planPath
-			emitEvent(stdout, format, event, nil)
+			emitEvent(eventWriter, format, event, nil)
 		}
 	})
 	if err := setupClient.Initialize(ctx); err != nil {
@@ -356,8 +545,33 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 		return err
 	}
 	if strings.EqualFold(status, "failed") || !containsCompletionSignal(agentText) {
+		emitEvent(eventWriter, format, newEvent(commandMain, "phase.failed"), map[string]any{
+			"status":        "failed",
+			"phase":         "setup",
+			"worktree_path": worktree.WorktreePath,
+			"work_branch":   worktree.WorkBranch,
+			"plan_path":     planPath,
+			"log_path":      logPath,
+			"message":       "setup agent did not complete successfully",
+		})
 		return fmt.Errorf("setup agent did not complete successfully")
 	}
+	emitEvent(eventWriter, format, newEvent(commandMain, "phase.completed"), map[string]any{
+		"status":        "ok",
+		"phase":         "setup",
+		"worktree_path": worktree.WorktreePath,
+		"work_branch":   worktree.WorkBranch,
+		"plan_path":     planPath,
+		"log_path":      logPath,
+	})
+	emitEvent(eventWriter, format, newEvent(commandMain, "phase.started"), map[string]any{
+		"status":        "running",
+		"phase":         "coding",
+		"worktree_path": worktree.WorktreePath,
+		"work_branch":   worktree.WorkBranch,
+		"plan_path":     planPath,
+		"log_path":      logPath,
+	})
 
 	codingClient, err := newAppServerClient(logger)
 	if err != nil {
@@ -382,24 +596,68 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 		event.WorktreePath = worktree.WorktreePath
 		event.WorkBranch = worktree.WorkBranch
 		event.PlanPath = planPath
-		emitEvent(stdout, format, event, nil)
+		emitEvent(eventWriter, format, event, nil)
 
 		status, agentText, err = codingClient.RunTurn(ctx, codingThreadID, nextPrompt, turnTimeout(req.TimeoutSeconds))
 		if err != nil {
 			return err
 		}
 		if strings.EqualFold(status, "failed") {
+			emitEvent(eventWriter, format, newEvent(commandMain, "iteration.failed"), map[string]any{
+				"status":        "failed",
+				"phase":         "coding",
+				"iteration":     iterations,
+				"worktree_path": worktree.WorktreePath,
+				"work_branch":   worktree.WorkBranch,
+				"plan_path":     planPath,
+				"log_path":      logPath,
+				"message":       "coding turn failed; scheduling recovery prompt",
+			})
 			nextPrompt = buildRecoveryPrompt(planPath)
 			continue
 		}
+		emitEvent(eventWriter, format, newEvent(commandMain, "iteration.completed"), map[string]any{
+			"status":        "ok",
+			"phase":         "coding",
+			"iteration":     iterations,
+			"worktree_path": worktree.WorktreePath,
+			"work_branch":   worktree.WorkBranch,
+			"plan_path":     planPath,
+			"log_path":      logPath,
+		})
 		if containsCompletionSignal(agentText) {
 			break
 		}
 		nextPrompt = buildCodingPrompt(req.Prompt, planPath)
 	}
 	if iterations >= req.MaxIterations && !containsCompletionSignal(agentText) {
+		emitEvent(eventWriter, format, newEvent(commandMain, "phase.failed"), map[string]any{
+			"status":        "failed",
+			"phase":         "coding",
+			"worktree_path": worktree.WorktreePath,
+			"work_branch":   worktree.WorkBranch,
+			"plan_path":     planPath,
+			"log_path":      logPath,
+			"message":       "reached max iterations without completion",
+		})
 		return fmt.Errorf("reached max iterations without completion")
 	}
+	emitEvent(eventWriter, format, newEvent(commandMain, "phase.completed"), map[string]any{
+		"status":        "ok",
+		"phase":         "coding",
+		"worktree_path": worktree.WorktreePath,
+		"work_branch":   worktree.WorkBranch,
+		"plan_path":     planPath,
+		"log_path":      logPath,
+	})
+	emitEvent(eventWriter, format, newEvent(commandMain, "phase.started"), map[string]any{
+		"status":        "running",
+		"phase":         "pr",
+		"worktree_path": worktree.WorktreePath,
+		"work_branch":   worktree.WorkBranch,
+		"plan_path":     planPath,
+		"log_path":      logPath,
+	})
 
 	prClient, err := newAppServerClient(logger)
 	if err != nil {
@@ -418,8 +676,25 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 		return err
 	}
 	if strings.EqualFold(status, "failed") {
+		emitEvent(eventWriter, format, newEvent(commandMain, "phase.failed"), map[string]any{
+			"status":        "failed",
+			"phase":         "pr",
+			"worktree_path": worktree.WorktreePath,
+			"work_branch":   worktree.WorkBranch,
+			"plan_path":     planPath,
+			"log_path":      logPath,
+			"message":       "pr agent failed",
+		})
 		return fmt.Errorf("pr agent failed")
 	}
+	emitEvent(eventWriter, format, newEvent(commandMain, "phase.completed"), map[string]any{
+		"status":        "ok",
+		"phase":         "pr",
+		"worktree_path": worktree.WorktreePath,
+		"work_branch":   worktree.WorkBranch,
+		"plan_path":     planPath,
+		"log_path":      logPath,
+	})
 	result := runResult{
 		Command:      commandMain,
 		Status:       "completed",
@@ -433,7 +708,7 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 		PlanPath:     planPath,
 		PRURL:        extractPullURL(agentText),
 	}
-	emitEvent(stdout, format, newEvent(commandMain, "run.completed"), map[string]any{
+	emitEvent(eventWriter, format, newEvent(commandMain, "run.completed"), map[string]any{
 		"status":        "completed",
 		"phase":         "completed",
 		"iterations":    iterations,
@@ -443,7 +718,10 @@ func runMain(ctx context.Context, cwd string, repoRoot string, req mainRequest, 
 		"log_path":      logPath,
 		"pr_url":        result.PRURL,
 	})
-	return emitSingle(cwd, "json", req.OutputFile, stdout, result, mustJSON(result))
+	if format == "ndjson" {
+		return nil
+	}
+	return emitSingle(cwd, format, req.OutputFile, stdout, result, mustJSON(result))
 }
 
 func resolveOutput(requested string, stdout io.Writer) string {
@@ -471,55 +749,56 @@ func emitSingle(cwd string, format string, outputFile string, stdout io.Writer, 
 }
 
 func emitReadResult(cwd string, format string, outputFile string, stdout io.Writer, command string, items []map[string]any, page int, pageSize int, pageAll bool, text string) error {
-	if page <= 0 {
-		page = defaultPage
-	}
-	if pageSize <= 0 {
-		pageSize = defaultPageSize
-	}
+	pageSize = normalizePageSize(pageSize)
 	pages := paginate(items, pageSize)
-	if len(pages) == 0 {
-		pages = [][]map[string]any{{}}
-	}
+	page, selected := pageSelection(pages, page)
 	if pageAll {
 		if format == "ndjson" {
 			lines := make([]string, 0, len(pages))
-			for index, items := range pages {
+			for index, pageItems := range pages {
 				envelope := map[string]any{
-					"command":   command,
-					"status":    "ok",
-					"page":      index + 1,
-					"page_size": pageSize,
-					"total":     len(items),
-					"page_all":  true,
-					"items":     items,
+					"command":     command,
+					"status":      "ok",
+					"page":        index + 1,
+					"page_size":   pageSize,
+					"total_items": len(items),
+					"total_pages": len(pages),
+					"page_all":    true,
+					"items":       pageItems,
 				}
 				body, _ := json.Marshal(envelope)
 				lines = append(lines, string(body))
 			}
 			return emitPayload(cwd, outputFile, stdout, strings.Join(lines, "\n")+"\n")
 		}
-		envelope := map[string]any{"command": command, "status": "ok", "page_all": true, "items": items}
+		envelope := map[string]any{
+			"command":     command,
+			"status":      "ok",
+			"page_all":    true,
+			"total_items": len(items),
+			"total_pages": len(pages),
+			"items":       items,
+		}
 		return emitSingle(cwd, format, outputFile, stdout, envelope, text)
 	}
-	if page > len(pages) {
-		page = len(pages)
-	}
-	selected := pages[page-1]
 	envelope := map[string]any{
-		"command":   command,
-		"status":    "ok",
-		"page":      page,
-		"page_size": pageSize,
-		"total":     len(items),
-		"items":     selected,
+		"command":     command,
+		"status":      "ok",
+		"page":        page,
+		"page_size":   pageSize,
+		"total_items": len(items),
+		"total_pages": len(pages),
+		"items":       selected,
 	}
 	return emitSingle(cwd, format, outputFile, stdout, envelope, text)
 }
 
 func paginate(items []map[string]any, pageSize int) [][]map[string]any {
+	if pageSize <= 0 {
+		pageSize = defaultPageSize
+	}
 	if len(items) == 0 {
-		return nil
+		return [][]map[string]any{}
 	}
 	pages := [][]map[string]any{}
 	for start := 0; start < len(items); start += pageSize {
@@ -530,6 +809,26 @@ func paginate(items []map[string]any, pageSize int) [][]map[string]any {
 		pages = append(pages, items[start:end])
 	}
 	return pages
+}
+
+func pageSelection(pages [][]map[string]any, page int) (int, []map[string]any) {
+	if len(pages) == 0 {
+		return defaultPage, []map[string]any{}
+	}
+	if page <= 0 {
+		page = defaultPage
+	}
+	if page > len(pages) {
+		page = len(pages)
+	}
+	return page, pages[page-1]
+}
+
+func normalizePageSize(pageSize int) int {
+	if pageSize <= 0 {
+		return defaultPageSize
+	}
+	return pageSize
 }
 
 func marshalForFormat(format string, payload any, text string) (string, error) {
@@ -566,6 +865,25 @@ func emitPayload(cwd string, outputFile string, stdout io.Writer, data string) e
 	}
 	_, err := io.WriteString(stdout, data)
 	return err
+}
+
+func openStreamWriter(cwd string, outputFile string, stdout io.Writer, format string) (io.Writer, func(), error) {
+	if format != "ndjson" || strings.TrimSpace(outputFile) == "" {
+		return stdout, func() {}, nil
+	}
+	path, err := resolveOutputPath(cwd, outputFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, nil, err
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	writer := io.MultiWriter(stdout, file)
+	return writer, func() { _ = file.Close() }, nil
 }
 
 func renderSchemaText(items []commandDescriptor) string {

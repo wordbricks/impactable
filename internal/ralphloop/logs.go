@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,7 +100,7 @@ func readTail(path string, lines int, raw bool) ([]logRecord, error) {
 	return records, nil
 }
 
-func followLog(ctx context.Context, path string, lines int, raw bool, stdout io.Writer) error {
+func followLog(ctx context.Context, path string, lines int, raw bool, onRecord func(logRecord) error) error {
 	cmd := exec.CommandContext(ctx, "tail", "-n", fmt.Sprintf("%d", lines), "-f", path)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -117,8 +116,12 @@ func followLog(ctx context.Context, path string, lines int, raw bool, stdout io.
 		if !raw {
 			record.Rendered = renderLogLine(line)
 		}
-		body, _ := json.Marshal(record)
-		_, _ = fmt.Fprintln(stdout, string(body))
+		if onRecord != nil {
+			if err := onRecord(record); err != nil {
+				return err
+			}
+			continue
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return err
