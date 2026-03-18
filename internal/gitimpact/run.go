@@ -46,14 +46,32 @@ func Run(args []string, cwd string, stdin io.Reader, stdout io.Writer, stderr io
 }
 
 func runAnalyze(cwd string, req analyzeRequest, stdout io.Writer) error {
+	cfg, resolvedConfig, err := loadConfig(cwd, req.ConfigPath)
+	if err != nil {
+		return err
+	}
 	format := resolveOutput(req.Output, stdout)
 	response := map[string]any{
 		"command": commandAnalyze,
 		"status":  "ok",
 		"request": map[string]any{
-			"config": req.ConfigPath,
+			"config": resolvedConfig,
 			"pr":     req.PRNumber,
 			"since":  req.Since,
+		},
+		"config": map[string]any{
+			"velen_org": cfg.Velen.Org,
+			"sources": map[string]any{
+				"github":    cfg.Velen.Sources.GitHub,
+				"warehouse": cfg.Velen.Sources.Warehouse,
+				"analytics": cfg.Velen.Sources.Analytics,
+			},
+			"analysis": map[string]any{
+				"before_window_days": cfg.Analysis.BeforeWindowDays,
+				"after_window_days":  cfg.Analysis.AfterWindowDays,
+				"cooldown_hours":     cfg.Analysis.CooldownHours,
+				"min_confidence":     cfg.Analysis.MinConfidence,
+			},
 		},
 		"result": map[string]any{
 			"phase":                  "phase-1-foundation",
@@ -63,26 +81,35 @@ func runAnalyze(cwd string, req analyzeRequest, stdout io.Writer) error {
 			"next_runtime_milestone": "M2_config_loading",
 		},
 	}
-	text := renderAnalyzeText(req)
+	text := renderAnalyzeText(req, resolvedConfig)
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, text)
 }
 
 func runCheckSources(cwd string, req checkSourcesRequest, stdout io.Writer) error {
+	cfg, resolvedConfig, err := loadConfig(cwd, req.ConfigPath)
+	if err != nil {
+		return err
+	}
 	format := resolveOutput(req.Output, stdout)
 	sources := make([]sourceCheckContract, 0, len(req.RequiredRoles))
 	for _, role := range req.RequiredRoles {
+		provider := sourceProviderFromRole(cfg, role)
 		sources = append(sources, sourceCheckContract{
-			Role:    role,
-			Status:  "pending",
-			Message: "velen integration abstraction not wired yet",
+			Role:     role,
+			Provider: provider,
+			Status:   "pending",
+			Message:  "velen integration abstraction not wired yet",
 		})
 	}
 	response := map[string]any{
 		"command": commandCheckSources,
 		"status":  "ok",
 		"request": map[string]any{
-			"config":         req.ConfigPath,
+			"config":         resolvedConfig,
 			"required_roles": req.RequiredRoles,
+		},
+		"config": map[string]any{
+			"velen_org": cfg.Velen.Org,
 		},
 		"summary": map[string]any{
 			"required": len(req.RequiredRoles),
@@ -90,11 +117,15 @@ func runCheckSources(cwd string, req checkSourcesRequest, stdout io.Writer) erro
 		},
 		"sources": sources,
 	}
-	text := renderCheckSourcesText(req, sources)
+	text := renderCheckSourcesText(resolvedConfig, sources)
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, text)
 }
 
 func runReportScaffold(cwd string, req reportScaffoldRequest, stdout io.Writer) error {
+	cfg, resolvedConfig, err := loadConfig(cwd, req.ConfigPath)
+	if err != nil {
+		return err
+	}
 	format := resolveOutput(req.Output, stdout)
 	modes, err := normalizeModes(req.Modes)
 	if err != nil {
@@ -112,13 +143,21 @@ func runReportScaffold(cwd string, req reportScaffoldRequest, stdout io.Writer) 
 		"command": commandReportScaffold,
 		"status":  "ok",
 		"request": map[string]any{
-			"config":     req.ConfigPath,
+			"config":     resolvedConfig,
 			"modes":      modes,
 			"output_dir": req.OutputDir,
 		},
+		"config": map[string]any{
+			"velen_org": cfg.Velen.Org,
+			"analysis": map[string]any{
+				"before_window_days": cfg.Analysis.BeforeWindowDays,
+				"after_window_days":  cfg.Analysis.AfterWindowDays,
+				"cooldown_hours":     cfg.Analysis.CooldownHours,
+			},
+		},
 		"reports": scaffolds,
 	}
-	text := renderReportScaffoldText(req, scaffolds)
+	text := renderReportScaffoldText(req, resolvedConfig, scaffolds)
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, text)
 }
 
@@ -267,14 +306,14 @@ func emitPayload(cwd string, outputFile string, stdout io.Writer, data string) e
 	return err
 }
 
-func renderAnalyzeText(req analyzeRequest) string {
-	return fmt.Sprintf("git-impact analyze (contract mode)\nconfig: %s\npr: %d\nsince: %s", req.ConfigPath, req.PRNumber, emptyAsNone(req.Since))
+func renderAnalyzeText(req analyzeRequest, configPath string) string {
+	return fmt.Sprintf("git-impact analyze (contract mode)\nconfig: %s\npr: %d\nsince: %s", configPath, req.PRNumber, emptyAsNone(req.Since))
 }
 
-func renderCheckSourcesText(req checkSourcesRequest, sources []sourceCheckContract) string {
+func renderCheckSourcesText(configPath string, sources []sourceCheckContract) string {
 	lines := []string{
 		"git-impact check-sources (contract mode)",
-		fmt.Sprintf("config: %s", req.ConfigPath),
+		fmt.Sprintf("config: %s", configPath),
 	}
 	for _, source := range sources {
 		lines = append(lines, fmt.Sprintf("- %s: %s", source.Role, source.Status))
@@ -282,10 +321,10 @@ func renderCheckSourcesText(req checkSourcesRequest, sources []sourceCheckContra
 	return strings.Join(lines, "\n")
 }
 
-func renderReportScaffoldText(req reportScaffoldRequest, reports []reportScaffoldContract) string {
+func renderReportScaffoldText(req reportScaffoldRequest, configPath string, reports []reportScaffoldContract) string {
 	lines := []string{
 		"git-impact report-scaffold (contract mode)",
-		fmt.Sprintf("config: %s", req.ConfigPath),
+		fmt.Sprintf("config: %s", configPath),
 		fmt.Sprintf("output_dir: %s", req.OutputDir),
 	}
 	for _, report := range reports {
@@ -332,5 +371,18 @@ func scaffoldPathForMode(outputDir string, mode string) string {
 		return filepath.Join(outputDir, "impact-report.html")
 	default:
 		return filepath.Join(outputDir, "impact-report.txt")
+	}
+}
+
+func sourceProviderFromRole(cfg Config, role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "github":
+		return cfg.Velen.Sources.GitHub
+	case "warehouse":
+		return cfg.Velen.Sources.Warehouse
+	case "analytics":
+		return cfg.Velen.Sources.Analytics
+	default:
+		return ""
 	}
 }

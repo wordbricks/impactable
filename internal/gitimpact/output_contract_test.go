@@ -10,9 +10,12 @@ import (
 func TestRunAnalyzeJSONEnvelope(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := t.TempDir()
+	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := Run([]string{"analyze", "--pr", "142", "--output", "json"}, t.TempDir(), strings.NewReader(""), &stdout, &stderr)
+	code := Run([]string{"analyze", "--config", configPath, "--pr", "142", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
 	}
@@ -36,9 +39,12 @@ func TestRunAnalyzeJSONEnvelope(t *testing.T) {
 func TestRunCheckSourcesJSONEnvelope(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := t.TempDir()
+	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := Run([]string{"check-sources", "--require", "github,warehouse", "--output", "json"}, t.TempDir(), strings.NewReader(""), &stdout, &stderr)
+	code := Run([]string{"check-sources", "--config", configPath, "--require", "github,warehouse", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
 	}
@@ -59,9 +65,12 @@ func TestRunCheckSourcesJSONEnvelope(t *testing.T) {
 func TestRunReportScaffoldJSONEnvelope(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := t.TempDir()
+	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := Run([]string{"report-scaffold", "--mode", "markdown", "--mode", "html", "--output", "json"}, t.TempDir(), strings.NewReader(""), &stdout, &stderr)
+	code := Run([]string{"report-scaffold", "--config", configPath, "--mode", "markdown", "--mode", "html", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
 	}

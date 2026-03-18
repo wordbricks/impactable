@@ -13,7 +13,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 | ID | Milestone | Status | Exit criteria |
 | --- | --- | --- | --- |
 | M1 | CLI foundation and command surface | completed | Add Git impact CLI command surface and request/response contracts for `analyze`, `check-sources`, and report-scaffold output modes with machine-readable envelopes. |
-| M2 | Config loading and validation | not started | Implement config file loading for Velen/source mappings and analysis window settings with validation + deterministic defaults and unit tests. |
+| M2 | Config loading and validation | completed | Implement config file loading for Velen/source mappings and analysis window settings with validation + deterministic defaults and unit tests. |
 | M3 | Velen integration abstractions and source checks | not started | Introduce Velen client abstractions (auth/org/source/query primitives), implement source discovery + required-source capability checks, and test with mock/fake executors. |
 | M4 | Single-PR impact analysis path | not started | Implement collector/linker/scorer MVP flow for one PR: fetch PR metadata, perform before/after metric comparison for one metric, and compute single-PR impact score. |
 | M5 | Report generation scaffolding | not started | Add report-domain scaffolding and CLI output adapters for terminal/JSON plus file scaffold hooks for Markdown/HTML expansion paths. |
@@ -22,7 +22,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 ## Current progress
 - Overall status: in progress.
 - M1: completed.
-- M2: not started.
+- M2: completed.
 - M3: not started.
 - M4: not started.
 - M5: not started.
@@ -44,6 +44,20 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Added test coverage for parser behavior, command option compatibility, schema contracts, envelope output, and structured failure output.
 - Verification for this milestone: `go test ./...` passed.
 
+### M2 - Config loading and validation (completed)
+- Added `internal/gitimpact/config.go` with config loading for:
+  - Velen org and source-role mapping (`github`, `warehouse`, `analytics`)
+  - analysis window settings (`before_window_days`, `after_window_days`, `cooldown_hours`, `min_confidence`)
+- Implemented deterministic defaults for analysis settings when omitted:
+  - `before_window_days=7`
+  - `after_window_days=7`
+  - `cooldown_hours=24`
+  - `min_confidence=0.6`
+- Added config validation rules for required Velen fields and numeric bounds.
+- Wired `analyze`, `check-sources`, and `report-scaffold` command paths to load and validate config before producing command envelopes.
+- Added focused tests for config defaults, relative path resolution, and validation failures, and updated envelope/runtime tests to use real config fixtures.
+- Verification for this milestone: `go test ./...` passed.
+
 ## Key decisions
 - Treat `SPEC.md` Section 11 Phase 1 as the implementation boundary and defer Phase 2+ items.
 - Keep Velen access behind testable interfaces so business logic is decoupled from subprocess execution details.
@@ -52,6 +66,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Preserve existing repository boundaries (`cmd/*` thin entrypoint, `internal/*` implementation logic).
 - Added a dedicated Go runtime boundary (`cmd/git-impact` -> `internal/gitimpact`) instead of extending `internal/ralphloop`.
 - Added `schema` command support early to make the command contract machine-discoverable for automation clients.
+- Used a deterministic, repository-local YAML subset parser to avoid introducing external dependency risk in the foundation milestone.
 
 ## Remaining issues
 - Final package layout for new Git impact modules should be validated against existing `internal/ralphloop` ownership to avoid boundary drift.
