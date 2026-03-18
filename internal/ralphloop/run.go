@@ -509,13 +509,7 @@ func resolveSandbox(mode string) any {
 }
 
 func resolvePRSandbox(mode string, worktreePath string) any {
-	if resolveSandbox(mode) == "workspace-write" {
-		return map[string]any{
-			"type":          "workspaceWrite",
-			"writableRoots": []string{worktreePath},
-			"networkAccess": true,
-		}
-	}
+	_ = worktreePath
 	return resolveSandbox(mode)
 }
 

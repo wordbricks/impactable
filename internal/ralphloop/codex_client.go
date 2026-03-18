@@ -140,6 +140,7 @@ func (c *appServerClient) RunTurn(ctx context.Context, threadID string, prompt s
 	}
 
 	textParts := []string{}
+	finalAnswerParts := []string{}
 	for {
 		select {
 		case err := <-c.waitErr:
@@ -160,13 +161,21 @@ func (c *appServerClient) RunTurn(ctx context.Context, threadID string, prompt s
 			}
 			switch strings.TrimSpace(notification.Method) {
 			case "item/completed":
-				if text := extractAgentTextRaw(notification.Params["item"]); strings.TrimSpace(text) != "" {
+				item, _ := notification.Params["item"].(map[string]any)
+				if text := extractAgentTextRaw(item); strings.TrimSpace(text) != "" {
 					textParts = append(textParts, text)
+					if phase, _ := item["phase"].(string); phase == "final_answer" {
+						finalAnswerParts = append(finalAnswerParts, text)
+					}
 				}
 			case "turn/completed":
 				turn, _ := notification.Params["turn"].(map[string]any)
 				status, _ := turn["status"].(string)
-				return strings.TrimSpace(status), strings.TrimSpace(strings.Join(textParts, "\n")), nil
+				resultText := strings.TrimSpace(strings.Join(finalAnswerParts, "\n"))
+				if resultText == "" {
+					resultText = strings.TrimSpace(strings.Join(textParts, "\n"))
+				}
+				return strings.TrimSpace(status), resultText, nil
 			}
 		}
 	}
