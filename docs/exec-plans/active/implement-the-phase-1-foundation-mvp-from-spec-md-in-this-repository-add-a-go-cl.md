@@ -14,7 +14,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 | --- | --- | --- | --- |
 | M1 | CLI foundation and command surface | completed | Add Git impact CLI command surface and request/response contracts for `analyze`, `check-sources`, and report-scaffold output modes with machine-readable envelopes. |
 | M2 | Config loading and validation | completed | Implement config file loading for Velen/source mappings and analysis window settings with validation + deterministic defaults and unit tests. |
-| M3 | Velen integration abstractions and source checks | not started | Introduce Velen client abstractions (auth/org/source/query primitives), implement source discovery + required-source capability checks, and test with mock/fake executors. |
+| M3 | Velen integration abstractions and source checks | completed | Introduce Velen client abstractions (auth/org/source/query primitives), implement source discovery + required-source capability checks, and test with mock/fake executors. |
 | M4 | Single-PR impact analysis path | not started | Implement collector/linker/scorer MVP flow for one PR: fetch PR metadata, perform before/after metric comparison for one metric, and compute single-PR impact score. |
 | M5 | Report generation scaffolding | not started | Add report-domain scaffolding and CLI output adapters for terminal/JSON plus file scaffold hooks for Markdown/HTML expansion paths. |
 | M6 | Test coverage, verification, and docs alignment | not started | Add coverage for new command paths and failure branches, run `go test ./...`, and update execution artifacts/docs needed for handoff. |
@@ -23,7 +23,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Overall status: in progress.
 - M1: completed.
 - M2: completed.
-- M3: not started.
+- M3: completed.
 - M4: not started.
 - M5: not started.
 - M6: not started.
@@ -58,6 +58,23 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Added focused tests for config defaults, relative path resolution, and validation failures, and updated envelope/runtime tests to use real config fixtures.
 - Verification for this milestone: `go test ./...` passed.
 
+### M3 - Velen integration abstractions and source checks (completed)
+- Added Velen abstraction layer in `internal/gitimpact/velen.go`:
+  - `VelenClient` interface with auth/org/source/query primitives (`WhoAmI`, `CurrentOrg`, `ListSources`, `ShowSource`, `Query`)
+  - CLI-backed implementation using a command-executor abstraction (`os/exec` in production)
+  - JSON parsers tolerant to multiple response envelope shapes for source list/detail payloads
+- Added source-check evaluator in `internal/gitimpact/source_checks.go`:
+  - runs auth/org/source discovery flow
+  - validates required role->source mappings against discovered sources
+  - enforces `QUERY` capability checks per required source
+  - emits structured per-role status (`ok`, `missing`, `failed`) plus readiness summary
+- Wired `check-sources` runtime path to execute real Velen checks through the abstraction and emit structured metadata (`identity`, org match, discovered source count).
+- Added test coverage with fake/mocked dependencies:
+  - fake Velen client tests for role/capability/missing/org-mismatch branches
+  - fake command executor tests for CLI integration primitive parsing
+  - updated command output contract test for `check-sources` to run via injected fake Velen client factory.
+- Verification for this milestone: `go test ./...` passed.
+
 ## Key decisions
 - Treat `SPEC.md` Section 11 Phase 1 as the implementation boundary and defer Phase 2+ items.
 - Keep Velen access behind testable interfaces so business logic is decoupled from subprocess execution details.
@@ -67,6 +84,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Added a dedicated Go runtime boundary (`cmd/git-impact` -> `internal/gitimpact`) instead of extending `internal/ralphloop`.
 - Added `schema` command support early to make the command contract machine-discoverable for automation clients.
 - Used a deterministic, repository-local YAML subset parser to avoid introducing external dependency risk in the foundation milestone.
+- Keep Velen invocation behind a command executor abstraction to allow deterministic tests without shelling out to a real `velen` binary.
 
 ## Remaining issues
 - Final package layout for new Git impact modules should be validated against existing `internal/ralphloop` ownership to avoid boundary drift.

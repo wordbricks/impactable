@@ -1,6 +1,7 @@
 package gitimpact
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,17 +91,11 @@ func runCheckSources(cwd string, req checkSourcesRequest, stdout io.Writer) erro
 	if err != nil {
 		return err
 	}
-	format := resolveOutput(req.Output, stdout)
-	sources := make([]sourceCheckContract, 0, len(req.RequiredRoles))
-	for _, role := range req.RequiredRoles {
-		provider := sourceProviderFromRole(cfg, role)
-		sources = append(sources, sourceCheckContract{
-			Role:     role,
-			Provider: provider,
-			Status:   "pending",
-			Message:  "velen integration abstraction not wired yet",
-		})
+	checks, summary, checkContext, err := checkRequiredSources(context.Background(), cfg, req.RequiredRoles, newVelenClient())
+	if err != nil {
+		return err
 	}
+	format := resolveOutput(req.Output, stdout)
 	response := map[string]any{
 		"command": commandCheckSources,
 		"status":  "ok",
@@ -111,13 +106,11 @@ func runCheckSources(cwd string, req checkSourcesRequest, stdout io.Writer) erro
 		"config": map[string]any{
 			"velen_org": cfg.Velen.Org,
 		},
-		"summary": map[string]any{
-			"required": len(req.RequiredRoles),
-			"pending":  len(req.RequiredRoles),
-		},
-		"sources": sources,
+		"velen":   checkContext,
+		"summary": summary,
+		"sources": checks,
 	}
-	text := renderCheckSourcesText(resolvedConfig, sources)
+	text := renderCheckSourcesText(resolvedConfig, checks, summary)
 	return emitSingle(cwd, format, req.OutputFile, stdout, response, text)
 }
 
@@ -310,10 +303,11 @@ func renderAnalyzeText(req analyzeRequest, configPath string) string {
 	return fmt.Sprintf("git-impact analyze (contract mode)\nconfig: %s\npr: %d\nsince: %s", configPath, req.PRNumber, emptyAsNone(req.Since))
 }
 
-func renderCheckSourcesText(configPath string, sources []sourceCheckContract) string {
+func renderCheckSourcesText(configPath string, sources []sourceCheckContract, summary sourceCheckSummary) string {
 	lines := []string{
 		"git-impact check-sources (contract mode)",
 		fmt.Sprintf("config: %s", configPath),
+		fmt.Sprintf("summary: ok=%d missing=%d failed=%d ready=%t", summary.OK, summary.Missing, summary.Failed, summary.Ready),
 	}
 	for _, source := range sources {
 		lines = append(lines, fmt.Sprintf("- %s: %s", source.Role, source.Status))
@@ -371,18 +365,5 @@ func scaffoldPathForMode(outputDir string, mode string) string {
 		return filepath.Join(outputDir, "impact-report.html")
 	default:
 		return filepath.Join(outputDir, "impact-report.txt")
-	}
-}
-
-func sourceProviderFromRole(cfg Config, role string) string {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "github":
-		return cfg.Velen.Sources.GitHub
-	case "warehouse":
-		return cfg.Velen.Sources.Warehouse
-	case "analytics":
-		return cfg.Velen.Sources.Analytics
-	default:
-		return ""
 	}
 }

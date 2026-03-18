@@ -42,24 +42,40 @@ func TestRunCheckSourcesJSONEnvelope(t *testing.T) {
 	repoRoot := t.TempDir()
 	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	code := Run([]string{"check-sources", "--config", configPath, "--require", "github,warehouse", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
-	}
+	withVelenClientFactory(func() VelenClient {
+		return fakeVelenClient{
+			identity:   VelenIdentity{Handle: "ci-user"},
+			currentOrg: "impactable",
+			sources: []VelenSource{
+				{Key: "github-main", Provider: "github", SupportsQuery: true},
+				{Key: "prod-warehouse", Provider: "bigquery", SupportsQuery: true},
+				{Key: "amplitude-prod", Provider: "amplitude", SupportsQuery: true},
+			},
+		}
+	}, func() {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		code := Run([]string{"check-sources", "--config", configPath, "--require", "github,warehouse", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
+		}
 
-	response := map[string]any{}
-	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		t.Fatalf("failed to decode output: %v (%q)", err, stdout.String())
-	}
-	if response["command"] != commandCheckSources {
-		t.Fatalf("unexpected command: %#v", response["command"])
-	}
-	sources, _ := response["sources"].([]any)
-	if len(sources) != 2 {
-		t.Fatalf("expected two source contracts, got %d", len(sources))
-	}
+		response := map[string]any{}
+		if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+			t.Fatalf("failed to decode output: %v (%q)", err, stdout.String())
+		}
+		if response["command"] != commandCheckSources {
+			t.Fatalf("unexpected command: %#v", response["command"])
+		}
+		sources, _ := response["sources"].([]any)
+		if len(sources) != 2 {
+			t.Fatalf("expected two source contracts, got %d", len(sources))
+		}
+		summary, _ := response["summary"].(map[string]any)
+		if summary["ready"] != true {
+			t.Fatalf("expected ready=true summary, got %#v", summary["ready"])
+		}
+	})
 }
 
 func TestRunReportScaffoldJSONEnvelope(t *testing.T) {

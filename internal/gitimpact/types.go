@@ -63,10 +63,12 @@ type structuredError struct {
 }
 
 type sourceCheckContract struct {
-	Role     string `json:"role"`
-	Status   string `json:"status"`
-	Provider string `json:"provider,omitempty"`
-	Message  string `json:"message,omitempty"`
+	Role           string `json:"role"`
+	SourceKey      string `json:"source_key,omitempty"`
+	Status         string `json:"status"`
+	Provider       string `json:"provider,omitempty"`
+	QuerySupported bool   `json:"query_supported,omitempty"`
+	Message        string `json:"message,omitempty"`
 }
 
 type reportScaffoldContract struct {
