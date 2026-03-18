@@ -7,7 +7,7 @@ This repository currently contains two related systems:
 1. A Go implementation of `ralph-loop`, an agent-first CLI that prepares a worktree, drives Codex through a setup and coding loop, and streams structured run data.
 2. A Rust `harnesscli` bootstrap that turns the repository into a harnessed codebase with stable commands for smoke, lint, typecheck, test, audit, init, boot, observability, and cleanup.
 
-The long-term product direction in [`SPEC.md`](SPEC.md) is a Git impact analyzer. The code that exists today is still mostly harness and orchestration infrastructure.
+The long-term product direction in [`SPEC.md`](SPEC.md) is a Git impact analyzer. The repository now has an initial Go CLI foundation for that direction (`git-impact`) while still containing the existing harness and orchestration infrastructure.
 
 ## Package Boundaries
 
@@ -16,14 +16,22 @@ The long-term product direction in [`SPEC.md`](SPEC.md) is a Git impact analyzer
 - `cmd/ralph-loop`
   - Thin CLI entrypoint.
   - Resolves the current working directory and hands control to `internal/ralphloop`.
+- `cmd/git-impact`
+  - Thin CLI entrypoint for the Git Impact Analyzer command surface.
+  - Resolves the current working directory and hands control to `internal/gitimpact`.
 - `internal/ralphloop`
   - Parsing, schema generation, worktree management, session tracking, log handling, JSON-RPC transport, and orchestration.
   - This package is the only place that should contain Ralph Loop behavior.
+- `internal/gitimpact`
+  - Git impact analyzer command parsing, machine-readable contract/schema surface, and Phase 1 CLI scaffolding.
+  - This package is the only place that should contain Git Impact Analyzer CLI behavior.
 
 Dependency direction:
 
 - `cmd/ralph-loop` -> `internal/ralphloop`
+- `cmd/git-impact` -> `internal/gitimpact`
 - `internal/ralphloop` -> Go standard library
+- `internal/gitimpact` -> Go standard library
 
 ### Rust harness runtime
 
@@ -57,6 +65,8 @@ Dependency direction:
 
 - `./ralph-loop`
   - Repo-root executable wrapper around `go run ./cmd/ralph-loop`.
+- `./git-impact`
+  - Repo-root executable wrapper around `go run ./cmd/git-impact`.
 - `cargo build --release --manifest-path harness/Cargo.toml`
   - Builds `harnesscli`.
 - `make smoke`, `make check`, `make test`
