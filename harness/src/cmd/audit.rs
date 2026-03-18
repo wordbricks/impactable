@@ -88,7 +88,6 @@ fn required_file_checks(root: &Path) -> Vec<AuditCheck> {
         "docs/product-specs/harness-demo-app.md",
         "Makefile.harness",
         "harness/Cargo.toml",
-        ".github/workflows/harness.yml",
     ];
     files
         .into_iter()

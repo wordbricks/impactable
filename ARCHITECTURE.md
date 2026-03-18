@@ -59,8 +59,8 @@ Dependency direction:
   - Repo-root executable wrapper around `go run ./cmd/ralph-loop`.
 - `cargo build --release --manifest-path harness/Cargo.toml`
   - Builds `harnesscli`.
-- `make ci`
-  - Stable top-level validation flow once the harness is built.
+- `make smoke`, `make check`, `make test`
+  - Stable top-level validation commands once the harness is built.
 
 ## Boundary Rules
 

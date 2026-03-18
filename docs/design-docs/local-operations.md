@@ -37,7 +37,6 @@
 - `make typecheck`
 - `make check`
 - `make test`
-- `make ci`
 
 ## Environment Variables
 
