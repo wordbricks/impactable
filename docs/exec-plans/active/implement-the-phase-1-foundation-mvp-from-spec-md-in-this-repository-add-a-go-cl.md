@@ -13,7 +13,7 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 | ID | Milestone | Status | Exit criteria |
 | --- | --- | --- | --- |
 | M1 | CLI and package foundation | completed | Add/confirm `cmd/git-impact` entrypoint and `internal/gitimpact` command scaffolding with structured command/result envelopes. |
-| M2 | Config loading and validation | not started | Implement config file loading and validation for Velen org/source mappings and analysis windows, with deterministic defaults and tests. |
+| M2 | Config loading and validation | completed | Implement config file loading and validation for Velen org/source mappings and analysis windows, with deterministic defaults and tests. |
 | M3 | Velen integration abstractions and source checks | not started | Implement Velen client abstractions (`auth`, `org`, `source`, `query`) and `check-sources` flow with capability validation and tests. |
 | M4 | Single-PR impact analysis path | not started | Implement `analyze --pr` MVP flow (collect/link/score) for one metric with structured output and tests. |
 | M5 | Report scaffolding and output surfaces | not started | Implement report-generation scaffolding and output mode plumbing for terminal/JSON plus file-oriented markdown/html hooks. |
@@ -22,7 +22,7 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 ## Current progress
 - Overall status: in progress.
 - M1: completed. `cmd/git-impact` thin entrypoint is in place, and success outputs now use one envelope shape (`command`, `status`, optional `request`/`config`, and `result`) across `analyze`, `check-sources`, `report-scaffold`, and `schema`.
-- M2: not started.
+- M2: completed. Config loading supports cwd-relative/default path resolution, validates required `velen` org/source role mappings and analysis windows, applies deterministic defaults for omitted analysis fields, and now rejects non-finite confidence values (`NaN`/`Inf`) in addition to out-of-range values. Coverage added for default-path loading, partial analysis defaults, and invalid numeric parsing.
 - M3: not started.
 - M4: not started.
 - M5: not started.
@@ -34,9 +34,10 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 - Treat machine-readable structured output as the primary contract for automation-facing commands.
 - Isolate Velen subprocess usage behind abstractions to keep tests deterministic.
 - Standardize successful command responses on a single envelope contract with a top-level `result` object so automation clients do not need command-specific top-level field parsing.
+- Keep Phase 1 config parsing strict for required `velen` and `analysis` fields while treating missing analysis values as deterministic defaults.
+- Reject non-finite numeric values in config validation so analysis confidence remains a stable 0..1 scalar contract.
 
 ## Remaining issues
-- Confirm exact config schema shape and compatibility expectations for existing repository fixtures.
 - Decide final report scaffold file layout and naming for markdown/html outputs.
 - Validate assumptions about Velen source capability metadata across providers.
 

@@ -3,6 +3,7 @@ package gitimpact
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -137,7 +138,7 @@ func validateConfig(cfg Config) error {
 	if cfg.Analysis.CooldownHours < 0 {
 		return fmt.Errorf("analysis.cooldown_hours must be zero or greater")
 	}
-	if cfg.Analysis.MinConfidence < 0 || cfg.Analysis.MinConfidence > 1 {
+	if math.IsNaN(cfg.Analysis.MinConfidence) || math.IsInf(cfg.Analysis.MinConfidence, 0) || cfg.Analysis.MinConfidence < 0 || cfg.Analysis.MinConfidence > 1 {
 		return fmt.Errorf("analysis.min_confidence must be between 0 and 1")
 	}
 	return nil
