@@ -3,6 +3,7 @@ package gitimpact
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -13,27 +14,65 @@ func TestRunAnalyzeJSONEnvelope(t *testing.T) {
 	repoRoot := t.TempDir()
 	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	code := Run([]string{"analyze", "--config", configPath, "--pr", "142", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
-	}
+	withVelenClientFactory(func() VelenClient {
+		return fakeVelenClient{
+			queryFunc: func(sourceKey string, queryFile string) ([]byte, error) {
+				sqlBody, err := os.ReadFile(queryFile)
+				if err != nil {
+					return nil, err
+				}
+				sql := string(sqlBody)
+				switch sourceKey {
+				case "github-main":
+					if strings.Contains(sql, "FROM pull_requests") {
+						return []byte(`{"rows":[{"pr_number":142,"title":"Checkout Redesign","author":"kim","merged_at":"2026-02-15T00:00:00Z"}]}`), nil
+					}
+				case "prod-warehouse":
+					if strings.Contains(sql, "FROM deployments") {
+						return []byte(`{"rows":[{"deployed_at":"2026-02-15T03:00:00Z"}]}`), nil
+					}
+				case "amplitude-prod":
+					if strings.Contains(sql, "phase: before") {
+						return []byte(`{"rows":[{"metric_value":0.10,"sample_size":2000}]}`), nil
+					}
+					if strings.Contains(sql, "phase: after") {
+						return []byte(`{"rows":[{"metric_value":0.12,"sample_size":2100}]}`), nil
+					}
+				}
+				return nil, assertErr("unexpected query input")
+			},
+		}
+	}, func() {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		code := Run([]string{"analyze", "--config", configPath, "--pr", "142", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("expected exit code 0, got %d, stderr=%q", code, stderr.String())
+		}
 
-	response := map[string]any{}
-	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		t.Fatalf("failed to decode output: %v (%q)", err, stdout.String())
-	}
-	if response["command"] != commandAnalyze {
-		t.Fatalf("unexpected command: %#v", response["command"])
-	}
-	if response["status"] != "ok" {
-		t.Fatalf("unexpected status: %#v", response["status"])
-	}
-	result, _ := response["result"].(map[string]any)
-	if result["analysis_path"] != "single_pr" {
-		t.Fatalf("unexpected analysis_path: %#v", result["analysis_path"])
-	}
+		response := map[string]any{}
+		if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+			t.Fatalf("failed to decode output: %v (%q)", err, stdout.String())
+		}
+		if response["command"] != commandAnalyze {
+			t.Fatalf("unexpected command: %#v", response["command"])
+		}
+		if response["status"] != "ok" {
+			t.Fatalf("unexpected status: %#v", response["status"])
+		}
+		result, _ := response["result"].(map[string]any)
+		if result["analysis_path"] != "single_pr" {
+			t.Fatalf("unexpected analysis_path: %#v", result["analysis_path"])
+		}
+		singlePR, _ := result["single_pr"].(map[string]any)
+		if singlePR == nil {
+			t.Fatalf("expected single_pr result payload")
+		}
+		score, _ := singlePR["impact_score"].(map[string]any)
+		if score["score"] == nil {
+			t.Fatalf("expected impact score")
+		}
+	})
 }
 
 func TestRunCheckSourcesJSONEnvelope(t *testing.T) {

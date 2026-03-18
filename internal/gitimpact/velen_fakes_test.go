@@ -16,6 +16,7 @@ type fakeVelenClient struct {
 	showErr    error
 	queryBody  []byte
 	queryErr   error
+	queryFunc  func(sourceKey string, queryFile string) ([]byte, error)
 }
 
 func (client fakeVelenClient) WhoAmI(context.Context) (VelenIdentity, error) {
@@ -49,7 +50,10 @@ func (client fakeVelenClient) ShowSource(_ context.Context, sourceKey string) (V
 	return VelenSource{}, fmt.Errorf("source %q not found", sourceKey)
 }
 
-func (client fakeVelenClient) Query(context.Context, string, string) ([]byte, error) {
+func (client fakeVelenClient) Query(_ context.Context, sourceKey string, queryFile string) ([]byte, error) {
+	if client.queryFunc != nil {
+		return client.queryFunc(sourceKey, queryFile)
+	}
 	if client.queryErr != nil {
 		return nil, client.queryErr
 	}

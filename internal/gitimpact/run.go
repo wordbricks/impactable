@@ -51,6 +51,13 @@ func runAnalyze(cwd string, req analyzeRequest, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if req.PRNumber <= 0 {
+		return fmt.Errorf("analyze requires --pr for the Phase 1 single-PR path")
+	}
+	analysis, stages, err := analyzeSinglePR(context.Background(), newVelenClient(), cfg, req.PRNumber)
+	if err != nil {
+		return err
+	}
 	format := resolveOutput(req.Output, stdout)
 	response := map[string]any{
 		"command": commandAnalyze,
@@ -78,8 +85,10 @@ func runAnalyze(cwd string, req analyzeRequest, stdout io.Writer) error {
 			"phase":                  "phase-1-foundation",
 			"mode":                   "contract",
 			"analysis_path":          "single_pr",
-			"analysis_status":        "not_started",
-			"next_runtime_milestone": "M2_config_loading",
+			"analysis_status":        "completed",
+			"next_runtime_milestone": "M5_report_scaffolding",
+			"stages":                 stages,
+			"single_pr":              analysis,
 		},
 	}
 	text := renderAnalyzeText(req, resolvedConfig)

@@ -93,3 +93,31 @@ func TestRun_RuntimeErrorStructuredInJSONMode(t *testing.T) {
 		t.Fatalf("expected failed status, got %#v", response["status"])
 	}
 }
+
+func TestRun_AnalyzeMissingPRStructuredInJSONMode(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"analyze", "--config", configPath, "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr in json mode, got %q", stderr.String())
+	}
+
+	response := map[string]any{}
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse json response: %v (%q)", err, stdout.String())
+	}
+	if response["command"] != commandAnalyze {
+		t.Fatalf("expected command analyze, got %#v", response["command"])
+	}
+	if response["status"] != "failed" {
+		t.Fatalf("expected failed status, got %#v", response["status"])
+	}
+}

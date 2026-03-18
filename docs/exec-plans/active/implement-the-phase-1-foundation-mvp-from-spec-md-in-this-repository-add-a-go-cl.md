@@ -15,7 +15,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 | M1 | CLI foundation and command surface | completed | Add Git impact CLI command surface and request/response contracts for `analyze`, `check-sources`, and report-scaffold output modes with machine-readable envelopes. |
 | M2 | Config loading and validation | completed | Implement config file loading for Velen/source mappings and analysis window settings with validation + deterministic defaults and unit tests. |
 | M3 | Velen integration abstractions and source checks | completed | Introduce Velen client abstractions (auth/org/source/query primitives), implement source discovery + required-source capability checks, and test with mock/fake executors. |
-| M4 | Single-PR impact analysis path | not started | Implement collector/linker/scorer MVP flow for one PR: fetch PR metadata, perform before/after metric comparison for one metric, and compute single-PR impact score. |
+| M4 | Single-PR impact analysis path | completed | Implement collector/linker/scorer MVP flow for one PR: fetch PR metadata, perform before/after metric comparison for one metric, and compute single-PR impact score. |
 | M5 | Report generation scaffolding | not started | Add report-domain scaffolding and CLI output adapters for terminal/JSON plus file scaffold hooks for Markdown/HTML expansion paths. |
 | M6 | Test coverage, verification, and docs alignment | not started | Add coverage for new command paths and failure branches, run `go test ./...`, and update execution artifacts/docs needed for handoff. |
 
@@ -24,7 +24,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - M1: completed.
 - M2: completed.
 - M3: completed.
-- M4: not started.
+- M4: completed.
 - M5: not started.
 - M6: not started.
 
@@ -72,7 +72,24 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Added test coverage with fake/mocked dependencies:
   - fake Velen client tests for role/capability/missing/org-mismatch branches
   - fake command executor tests for CLI integration primitive parsing
-  - updated command output contract test for `check-sources` to run via injected fake Velen client factory.
+- updated command output contract test for `check-sources` to run via injected fake Velen client factory.
+- Verification for this milestone: `go test ./...` passed.
+
+### M4 - Single-PR impact analysis path (completed)
+- Added collector/linker/scorer implementation for `analyze --pr` in `internal/gitimpact/analysis.go`:
+  - collector: fetches PR metadata (`pr_number`, `title`, `author`, `merged_at`) via GitHub source query.
+  - linker: resolves deployment timestamp from warehouse source, with fallback to `merged_at + cooldown_hours` when no deployment row is available.
+  - scorer: computes before/after comparison for one metric (`conversion_rate`) over configured analysis windows.
+- Added MVP impact score calculation using the single-metric model:
+  - `impact_score = delta_ratio * weight * confidence * 10`
+  - clamped to `[-10, 10]`.
+- Wired `runAnalyze` to execute the single-PR path and emit structured stage + result payloads under `result.single_pr`.
+- Enforced explicit Phase 1 scope by requiring `--pr` for `analyze` in this milestone.
+- Added tests for:
+  - full single-PR analyze flow and score computation via fake Velen query responses.
+  - deployment-link fallback behavior.
+  - invalid PR metadata failure handling.
+  - structured command failure when `--pr` is missing.
 - Verification for this milestone: `go test ./...` passed.
 
 ## Key decisions
@@ -85,6 +102,7 @@ Deliver the Phase 1 Foundation MVP for the Git Impact Analyzer by adding a Go-fi
 - Added `schema` command support early to make the command contract machine-discoverable for automation clients.
 - Used a deterministic, repository-local YAML subset parser to avoid introducing external dependency risk in the foundation milestone.
 - Keep Velen invocation behind a command executor abstraction to allow deterministic tests without shelling out to a real `velen` binary.
+- For Phase 1 analysis, `analyze` is intentionally constrained to single-PR mode (`--pr`) rather than mixed multi-PR/since-window execution.
 
 ## Remaining issues
 - Final package layout for new Git impact modules should be validated against existing `internal/ralphloop` ownership to avoid boundary drift.
