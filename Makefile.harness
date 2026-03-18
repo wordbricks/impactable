@@ -1,0 +1,22 @@
+HARNESS := harness/target/release/harnesscli
+
+.PHONY: smoke test lint typecheck check ci harness-build
+
+harness-build:
+	@cargo build --release --manifest-path harness/Cargo.toml
+
+smoke: harness-build
+	@$(HARNESS) smoke
+
+test: harness-build
+	@$(HARNESS) test
+
+lint: harness-build
+	@$(HARNESS) lint
+
+typecheck: harness-build
+	@$(HARNESS) typecheck
+
+check: lint typecheck
+
+ci: smoke check test
