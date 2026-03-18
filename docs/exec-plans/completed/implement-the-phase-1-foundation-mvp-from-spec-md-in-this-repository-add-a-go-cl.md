@@ -17,7 +17,7 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 | M3 | Velen integration abstractions and source checks | completed | Implement Velen client abstractions (`auth`, `org`, `source`, `query`) and `check-sources` flow with capability validation and tests. |
 | M4 | Single-PR impact analysis path | completed | Implement `analyze --pr` MVP flow (collect/link/score) for one metric with structured output and tests. |
 | M5 | Report scaffolding and output surfaces | completed | Implement report-generation scaffolding and output mode plumbing for terminal/JSON plus file-oriented markdown/html hooks. |
-| M6 | Verification and plan/doc updates | not started | Run Go tests for new behaviors, close coverage gaps in failure branches, and update execution artifacts for handoff. |
+| M6 | Verification and plan/doc updates | completed | Run Go tests for new behaviors, close coverage gaps in failure branches, and update execution artifacts for handoff. |
 
 ## Current progress
 - Overall status: in progress.
@@ -26,7 +26,7 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 - M3: completed. Velen CLI integration abstractions for `auth whoami`, `org current`, `source list/show`, and `query` are in place; `check-sources` now verifies each required mapped source via `source show` and enforces `QUERY` capability from source detail, with tests covering positive, missing, unsupported, and detail-lookup failure paths.
 - M4: completed. `analyze --pr` runs collector/linker/scorer for one MVP metric (`conversion_rate`) with deployment fallback and structured response staging. Added validation so scorer payloads must include finite numeric metric values and positive sample sizes, plus tests for invalid metric values, invalid sample sizes, and command-level structured failure envelopes when analysis pipeline validation fails.
 - M5: completed. `report-scaffold` now performs real scaffolding: terminal mode remains stdout-only (`ready`), while json/markdown/html modes write file hooks under the requested output directory (`written`) with deterministic placeholder content and structured mode/status/path contracts. Added tests covering file creation and mode-specific status semantics.
-- M6: not started.
+- M6: completed. Final verification run: `go test ./...` and `go test -cover ./internal/gitimpact` (70.8% statements). Closed failure-branch gaps for output path hardening by adding command-level structured failure coverage for `report-scaffold --output-dir ../...` and low-level resolver tests for path traversal rejection/canonical nested paths. Execution artifact updated for handoff by marking all milestones complete and moving this plan to `docs/exec-plans/completed/`.
 
 ## Key decisions
 - Keep implementation aligned to Phase 1 only; defer multi-metric, feature grouping, and leaderboard work to later phases.
@@ -39,9 +39,10 @@ Implement the Phase 1 Foundation MVP from `SPEC.md` by delivering a Go-based `gi
 - Use `velen source show` as the capability authority for required sources and treat detail lookup failure on listed sources as a readiness failure.
 - Treat scorer outputs as strict numeric contracts: malformed/non-finite metric values and non-positive samples fail analysis instead of silently coercing to zero.
 - Keep report scaffolding deterministic and idempotent: file modes always rewrite scaffold templates, and terminal mode is explicitly non-file output.
+- Enforce output-path sandboxing as an explicit tested failure contract for report scaffolding in automation JSON output.
 
 ## Remaining issues
-- No open issues for Phase 1 MVP milestones; remaining work is final verification and handoff updates in M6.
+- No open issues for Phase 1 Foundation MVP.
 
 ## Links
 - Product spec: `SPEC.md`

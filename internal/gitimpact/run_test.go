@@ -183,3 +183,39 @@ func TestRun_AnalyzePipelineFailureStructuredInJSONMode(t *testing.T) {
 		}
 	})
 }
+
+func TestRun_ReportScaffoldRejectsOutputDirEscape(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	configPath := writeTestConfig(t, repoRoot, testConfigOptions{})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"report-scaffold", "--config", configPath, "--mode", "json", "--output-dir", "../outside", "--output", "json"}, repoRoot, strings.NewReader(""), &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr in json mode, got %q", stderr.String())
+	}
+
+	response := map[string]any{}
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse json response: %v (%q)", err, stdout.String())
+	}
+	if response["command"] != commandReportScaffold {
+		t.Fatalf("expected command report-scaffold, got %#v", response["command"])
+	}
+	if response["status"] != "failed" {
+		t.Fatalf("expected failed status, got %#v", response["status"])
+	}
+	errorPayload, _ := response["error"].(map[string]any)
+	if errorPayload == nil {
+		t.Fatalf("expected error payload")
+	}
+	message, _ := errorPayload["message"].(string)
+	if !strings.Contains(message, "output file must stay under") {
+		t.Fatalf("unexpected error message: %q", message)
+	}
+}
