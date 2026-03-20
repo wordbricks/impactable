@@ -11,6 +11,15 @@
 - `./ralph-loop "<prompt>" --output ndjson --preserve-worktree`
   - Run the loop and keep the generated worktree for inspection.
 
+### Go WTL
+
+- `printf 'Summarize this repository.\n' | ./wtl run`
+  - Run the minimal WTL loop with text output in a terminal.
+- `printf 'Summarize this repository.\n' | ./wtl run --output json`
+  - Return one machine-readable run summary object.
+- `printf 'Summarize this repository.\n' | ./wtl run --output ndjson`
+  - Stream structured lifecycle events for the run.
+
 ### Harness CLI
 
 - `cargo build --release --manifest-path harness/Cargo.toml`
@@ -45,6 +54,13 @@
 - `RALPH_LOOP_CODEX_COMMAND`
   - Overrides the command used to start Codex app-server.
 
+### WTL
+
+- `WTL_CODEX_COMMAND`
+  - Overrides the command used to start Codex app-server for `wtl`.
+- `WTL_MODEL`
+  - Overrides the model used for `wtl run`.
+
 ### Harness
 
 - `HARNESS_SMOKE_CMD`
@@ -64,5 +80,6 @@
 ## Troubleshooting
 
 - If `./ralph-loop` cannot talk to Codex, confirm `codex app-server` works in your shell or set `RALPH_LOOP_CODEX_COMMAND`.
+- If `./wtl run` cannot talk to Codex, confirm `codex app-server` works in your shell or set `WTL_CODEX_COMMAND`.
 - If `harnesscli boot start` reports a busy port, rerun with `DISCODE_APP_PORT` or stop the conflicting process.
 - If automation output looks human-oriented in scripts, pass `--output json` explicitly even though non-TTY defaults should already select JSON.

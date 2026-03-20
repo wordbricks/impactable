@@ -37,6 +37,7 @@ docs/
 ## Runtime Surfaces
 
 - Ralph Loop CLI: `./ralph-loop`
+- WTL CLI: `./wtl`
 - Harness CLI: `harness/target/release/harnesscli`
 - Harness Make targets: `Makefile.harness`
 
