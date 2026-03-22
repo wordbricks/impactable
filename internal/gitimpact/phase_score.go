@@ -61,6 +61,16 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 	deployments := runCtx.LinkedData.Deployments
 	impacts := make([]PRImpact, 0, len(deployments))
 	for _, deployment := range deployments {
+		if deployment.DeployedAt.IsZero() {
+			impacts = append(impacts, PRImpact{
+				PRNumber:   deployment.PRNumber,
+				Score:      0,
+				Confidence: "low",
+				Reasoning:  "Deployment timestamp is unavailable. Assigned neutral score 0.0 with low confidence.",
+			})
+			continue
+		}
+
 		beforeStart := deployment.DeployedAt.AddDate(0, 0, -beforeDays)
 		afterEnd := deployment.DeployedAt.AddDate(0, 0, afterDays)
 		overlapCount := countOverlappingDeployments(deployment.DeployedAt, deployments, defaultScoreWindowDays)

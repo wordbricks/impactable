@@ -16,22 +16,25 @@ Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are eva
 | M2 | Implement schema discovery + metric query flow | not started | Handler queries analytics `information_schema.columns`, selects first usable metric, and runs before/after metric queries per deployment. |
 | M3 | Implement score/confidence/reasoning generation | not started | Each deployment yields `PRImpact` with score (0-10), confidence (`high`/`medium`/`low`), and reasoning including confounding context. |
 | M4 | Implement contributor rollup | not started | PR impacts are grouped by author to compute average score and top PR in `ContributorStats`. |
-| M5 | Add scorer tests | not started | `internal/gitimpact/phase_score_test.go` covers score normalization, confidence thresholds, contributor rollup, and empty-schema graceful behavior. |
+| M5 | Add scorer tests | completed | `internal/gitimpact/phase_score_test.go` covers score normalization, confidence thresholds, contributor rollup, and empty-schema graceful behavior. |
 | M6 | Verify and finalize | not started | `go build ./...` and `go test ./...` pass; scorer changes are staged and committed. |
 
 ## Current progress
 - Repository guardrails and architecture docs reviewed.
 - Required spec sections identified and read (`3.2`, `5.1`, `5.3`, `5.4`).
-- Impact Scorer implementation and tests are not started.
+- Added scorer test coverage for success-path metric querying and contributor rollup, in addition to existing score/confidence and empty-schema degradation coverage.
+- Hardened scoring behavior for deployments missing `deployed_at` by assigning a neutral score with explicit low-confidence reasoning.
 
 ## Key decisions
 - Reuse existing `VelenClient.Query` integration pattern from prior phase handlers for deterministic testability.
 - Keep default windows aligned with config defaults and spec defaults (7 days each when unset).
 - Treat deployment overlap density as the primary confidence baseline and surface overlap details in reasoning text.
+- For missing deployment timestamps, degrade gracefully instead of producing synthetic date-window queries.
 
 ## Remaining issues
 - Analytics schemas may vary widely; first-metric discovery and date filtering logic must be robust to sparse metadata.
 - Some deployments may not map to PR authors in collected data; rollup behavior must handle missing author values safely.
+- Full-repo verification (`go build ./...`, `go test ./...`) and final staging/commit remain for this step.
 
 ## Links
 - `SPEC.md` (sections 3.2, 5.1, 5.3, 5.4)

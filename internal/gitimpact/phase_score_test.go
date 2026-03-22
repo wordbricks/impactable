@@ -200,3 +200,115 @@ func TestScoreHandlerHandle_EmptyAnalyticsSchemaGracefulDegradation(t *testing.T
 		t.Fatalf("unexpected contributor stats: %#v", stat)
 	}
 }
+
+func TestScoreHandlerHandle_ScoresDeploymentsAndRollsUpContributors(t *testing.T) {
+	t.Parallel()
+
+	deployA := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	deployB := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+
+	metricCall := 0
+	handler := &ScoreHandler{
+		Query: func(_ *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
+			if sourceKey != "analytics-main" {
+				t.Fatalf("unexpected source key %q", sourceKey)
+			}
+			if sql == analyticsSchemaSQL {
+				return &QueryResult{
+					Rows: [][]interface{}{
+						{"product_metrics", "metric_date", "date"},
+						{"product_metrics", "conversion_rate", "double precision"},
+					},
+				}, nil
+			}
+			metricCall++
+			switch metricCall {
+			case 1:
+				return &QueryResult{Rows: [][]interface{}{{10.0}}}, nil
+			case 2:
+				return &QueryResult{Rows: [][]interface{}{{15.0}}}, nil
+			case 3:
+				return &QueryResult{Rows: [][]interface{}{{20.0}}}, nil
+			case 4:
+				return &QueryResult{Rows: [][]interface{}{{10.0}}}, nil
+			default:
+				t.Fatalf("unexpected extra metric query: %q", sql)
+				return nil, nil
+			}
+		},
+	}
+
+	runCtx := &RunContext{
+		VelenClient: &VelenClient{},
+		Config: &Config{
+			Velen: VelenConfig{
+				Sources: VelenSources{Analytics: "analytics-main"},
+			},
+		},
+		CollectedData: &CollectedData{
+			PRs: []PR{
+				{Number: 101, Author: "alice"},
+				{Number: 102, Author: "alice"},
+			},
+		},
+		LinkedData: &LinkedData{
+			Deployments: []Deployment{
+				{PRNumber: 101, DeployedAt: deployA},
+				{PRNumber: 102, DeployedAt: deployB},
+			},
+		},
+	}
+
+	result, err := handler.Handle(context.Background(), runCtx)
+	if err != nil {
+		t.Fatalf("handle returned error: %v", err)
+	}
+	if result == nil || result.Directive != DirectiveAdvancePhase {
+		t.Fatalf("expected advance directive, got %+v", result)
+	}
+	if metricCall != 4 {
+		t.Fatalf("expected 4 metric queries, got %d", metricCall)
+	}
+	if runCtx.ScoredData == nil {
+		t.Fatal("expected scored data to be populated")
+	}
+	if len(runCtx.ScoredData.PRImpacts) != 2 {
+		t.Fatalf("expected 2 PR impacts, got %d", len(runCtx.ScoredData.PRImpacts))
+	}
+
+	first := runCtx.ScoredData.PRImpacts[0]
+	second := runCtx.ScoredData.PRImpacts[1]
+
+	if first.PRNumber != 101 || second.PRNumber != 102 {
+		t.Fatalf("unexpected PR numbering in impacts: %#v", runCtx.ScoredData.PRImpacts)
+	}
+	if math.Abs(first.Score-5.0) > 0.0001 {
+		t.Fatalf("first score = %v, want 5", first.Score)
+	}
+	if math.Abs(second.Score-5.0) > 0.0001 {
+		t.Fatalf("second score = %v, want 5", second.Score)
+	}
+	if first.Confidence != "medium" || second.Confidence != "medium" {
+		t.Fatalf("expected medium confidence for overlapping deployments, got %q and %q", first.Confidence, second.Confidence)
+	}
+	if !strings.Contains(first.Reasoning, "delta") || !strings.Contains(second.Reasoning, "delta") {
+		t.Fatalf("expected reasoning to include delta details, got %#v", runCtx.ScoredData.PRImpacts)
+	}
+
+	if len(runCtx.ScoredData.ContributorStats) != 1 {
+		t.Fatalf("expected one contributor stats row, got %d", len(runCtx.ScoredData.ContributorStats))
+	}
+	stat := runCtx.ScoredData.ContributorStats[0]
+	if stat.Author != "alice" {
+		t.Fatalf("unexpected author %q", stat.Author)
+	}
+	if stat.PRCount != 2 {
+		t.Fatalf("PR count = %d, want 2", stat.PRCount)
+	}
+	if math.Abs(stat.AverageScore-5.0) > 0.0001 {
+		t.Fatalf("average score = %v, want 5", stat.AverageScore)
+	}
+	if stat.TopPRNumber != 101 {
+		t.Fatalf("top PR = %d, want 101 on score tie", stat.TopPRNumber)
+	}
+}
