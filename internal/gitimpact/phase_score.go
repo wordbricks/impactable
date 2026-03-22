@@ -431,6 +431,11 @@ func buildContributorStats(impacts []PRImpact, prs []PR) []ContributorStats {
 	authorByPR := map[int]string{}
 	for _, pr := range prs {
 		author := strings.TrimSpace(pr.Author)
+		existing := strings.TrimSpace(authorByPR[pr.Number])
+		// Keep the first non-empty author when duplicate PR rows appear.
+		if existing != "" {
+			continue
+		}
 		authorByPR[pr.Number] = author
 	}
 

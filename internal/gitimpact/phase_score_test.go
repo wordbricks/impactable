@@ -120,6 +120,35 @@ func TestBuildContributorStats(t *testing.T) {
 	}
 }
 
+func TestBuildContributorStats_DuplicatePRRowsKeepNonEmptyAuthor(t *testing.T) {
+	t.Parallel()
+
+	impacts := []PRImpact{
+		{PRNumber: 20, Score: 7.5},
+	}
+	prs := []PR{
+		{Number: 20, Author: "alice"},
+		{Number: 20, Author: ""},
+	}
+
+	stats := buildContributorStats(impacts, prs)
+	if len(stats) != 1 {
+		t.Fatalf("expected 1 contributor row, got %d", len(stats))
+	}
+	if stats[0].Author != "alice" {
+		t.Fatalf("expected author alice, got %q", stats[0].Author)
+	}
+	if stats[0].PRCount != 1 {
+		t.Fatalf("expected PRCount=1, got %d", stats[0].PRCount)
+	}
+	if math.Abs(stats[0].AverageScore-7.5) > 0.0001 {
+		t.Fatalf("expected AverageScore=7.5, got %v", stats[0].AverageScore)
+	}
+	if stats[0].TopPRNumber != 20 {
+		t.Fatalf("expected TopPRNumber=20, got %d", stats[0].TopPRNumber)
+	}
+}
+
 func TestScoreHandlerHandle_EmptyAnalyticsSchemaGracefulDegradation(t *testing.T) {
 	schemaCalls := 0
 	metricCalls := 0
