@@ -58,6 +58,7 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 	tableName, metricCol := selectMetricFromSchema(schemaResult)
 
 	beforeDays, afterDays := resolveScoreWindows(runCtx.Config)
+	overlapWindowDays := scoreWindowForConfidence(beforeDays, afterDays)
 	deployments := runCtx.LinkedData.Deployments
 	impacts := make([]PRImpact, 0, len(deployments))
 	for _, deployment := range deployments {
@@ -73,8 +74,9 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 
 		beforeStart := deployment.DeployedAt.AddDate(0, 0, -beforeDays)
 		afterEnd := deployment.DeployedAt.AddDate(0, 0, afterDays)
-		overlapCount := countOverlappingDeployments(deployment.DeployedAt, deployments, defaultScoreWindowDays)
-		confidence := assessConfidence(deployment.DeployedAt, deployments)
+		overlapCount := countOverlappingDeployments(deployment.DeployedAt, deployments, overlapWindowDays)
+		confidence := assessConfidenceWithWindow(deployment.DeployedAt, deployments, overlapWindowDays)
+		confoundingContext := buildConfoundingContext(overlapCount, overlapWindowDays)
 
 		impact := PRImpact{
 			PRNumber:   deployment.PRNumber,
@@ -85,10 +87,10 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 
 		if tableName == "" || metricCol == "" {
 			impact.Reasoning = fmt.Sprintf(
-				"No analytics metric discovered from source %q. Assigned neutral score 0.0 with %s confidence (%d overlapping deployments in +/-7 days).",
+				"No analytics metric discovered from source %q. Assigned neutral score 0.0 with %s confidence (%s).",
 				sourceKey,
 				confidence,
-				overlapCount,
+				confoundingContext,
 			)
 			impacts = append(impacts, impact)
 			continue
@@ -100,12 +102,12 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 		beforeResult, err := query(runCtx.VelenClient, sourceKey, beforeSQL)
 		if err != nil {
 			impact.Reasoning = fmt.Sprintf(
-				"Metric query failed for %s.%s before deployment: %v. Assigned neutral score 0.0 with %s confidence (%d overlapping deployments in +/-7 days).",
+				"Metric query failed for %s.%s before deployment: %v. Assigned neutral score 0.0 with %s confidence (%s).",
 				tableName,
 				metricCol,
 				err,
 				confidence,
-				overlapCount,
+				confoundingContext,
 			)
 			impacts = append(impacts, impact)
 			continue
@@ -114,12 +116,12 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 		afterResult, err := query(runCtx.VelenClient, sourceKey, afterSQL)
 		if err != nil {
 			impact.Reasoning = fmt.Sprintf(
-				"Metric query failed for %s.%s after deployment: %v. Assigned neutral score 0.0 with %s confidence (%d overlapping deployments in +/-7 days).",
+				"Metric query failed for %s.%s after deployment: %v. Assigned neutral score 0.0 with %s confidence (%s).",
 				tableName,
 				metricCol,
 				err,
 				confidence,
-				overlapCount,
+				confoundingContext,
 			)
 			impacts = append(impacts, impact)
 			continue
@@ -136,13 +138,13 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 
 		if !beforeOk || !afterOk {
 			impact.Reasoning = fmt.Sprintf(
-				"Metric %s.%s had insufficient data between %s and %s. Assigned neutral score 0.0 with %s confidence (%d overlapping deployments in +/-7 days).",
+				"Metric %s.%s had insufficient data between %s and %s. Assigned neutral score 0.0 with %s confidence (%s).",
 				tableName,
 				metricCol,
 				beforeStart.UTC().Format(metricDateLayout),
 				afterEnd.UTC().Format(metricDateLayout),
 				confidence,
-				overlapCount,
+				confoundingContext,
 			)
 			impacts = append(impacts, impact)
 			continue
@@ -151,7 +153,7 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 		impact.Score = calculateScore(beforeValue, afterValue)
 		delta := afterValue - beforeValue
 		impact.Reasoning = fmt.Sprintf(
-			"Metric %s.%s moved from %.4f to %.4f (delta %+0.4f) between %s and %s. Confidence %s due to %d overlapping deployments in +/-7 days.",
+			"Metric %s.%s moved from %.4f to %.4f (delta %+0.4f) between %s and %s. Confidence %s due to %s.",
 			tableName,
 			metricCol,
 			beforeValue,
@@ -160,7 +162,7 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 			beforeStart.UTC().Format(metricDateLayout),
 			afterEnd.UTC().Format(metricDateLayout),
 			confidence,
-			overlapCount,
+			confoundingContext,
 		)
 		impacts = append(impacts, impact)
 	}
@@ -191,6 +193,27 @@ func resolveScoreWindows(cfg *Config) (beforeDays int, afterDays int) {
 		afterDays = cfg.Analysis.AfterWindowDays
 	}
 	return beforeDays, afterDays
+}
+
+func scoreWindowForConfidence(beforeDays, afterDays int) int {
+	windowDays := beforeDays
+	if afterDays > windowDays {
+		windowDays = afterDays
+	}
+	if windowDays <= 0 {
+		return defaultScoreWindowDays
+	}
+	return windowDays
+}
+
+func buildConfoundingContext(overlapCount, windowDays int) string {
+	if windowDays <= 0 {
+		windowDays = defaultScoreWindowDays
+	}
+	if overlapCount <= 0 {
+		return fmt.Sprintf("no confounding deployments in +/- %d days", windowDays)
+	}
+	return fmt.Sprintf("%d confounding deployments in +/- %d days", overlapCount, windowDays)
 }
 
 func selectMetricFromSchema(schema *QueryResult) (tableName string, metricCol string) {
@@ -320,7 +343,11 @@ func calculateScore(before, after float64) float64 {
 
 // assessConfidence estimates confidence from deployment overlap density.
 func assessConfidence(deployedAt time.Time, allDeployments []Deployment) string {
-	overlapCount := countOverlappingDeployments(deployedAt, allDeployments, defaultScoreWindowDays)
+	return assessConfidenceWithWindow(deployedAt, allDeployments, defaultScoreWindowDays)
+}
+
+func assessConfidenceWithWindow(deployedAt time.Time, allDeployments []Deployment, windowDays int) string {
+	overlapCount := countOverlappingDeployments(deployedAt, allDeployments, windowDays)
 	switch {
 	case overlapCount == 0:
 		return "high"

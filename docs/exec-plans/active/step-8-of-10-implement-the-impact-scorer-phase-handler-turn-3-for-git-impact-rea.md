@@ -14,7 +14,7 @@ Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are eva
 | --- | --- | --- | --- |
 | M1 | Add Impact Scorer handler scaffold | completed | `internal/gitimpact/phase_score.go` defines `ScoreHandler` with `Handle(context.Context, *RunContext)` and required helper functions. |
 | M2 | Implement schema discovery + metric query flow | completed | Handler queries analytics `information_schema.columns`, selects first usable metric, and runs before/after metric queries per deployment. |
-| M3 | Implement score/confidence/reasoning generation | not started | Each deployment yields `PRImpact` with score (0-10), confidence (`high`/`medium`/`low`), and reasoning including confounding context. |
+| M3 | Implement score/confidence/reasoning generation | completed | Each deployment yields `PRImpact` with score (0-10), confidence (`high`/`medium`/`low`), and reasoning including confounding context. |
 | M4 | Implement contributor rollup | not started | PR impacts are grouped by author to compute average score and top PR in `ContributorStats`. |
 | M5 | Add scorer tests | completed | `internal/gitimpact/phase_score_test.go` covers score normalization, confidence thresholds, contributor rollup, and empty-schema graceful behavior. |
 | M6 | Verify and finalize | completed | `go build ./...` and `go test ./...` pass; scorer changes are staged and committed. |
@@ -27,6 +27,7 @@ Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are eva
 - Verified the full repository with `go build ./...` and `go test ./...` (both passing on 2026-03-22).
 - Aligned scorer scaffold declaration to `type ScoreHandler struct{}` while preserving testability through package-local query override used in scorer tests.
 - Reconciled Milestone M2 completion: scorer executes analytics schema discovery (`information_schema.columns`) and performs before/after metric average queries per deployment using discovered table/metric columns.
+- Completed M3 by tightening confidence/scoring reasoning: PR impact messages now include explicit confounding context text and confidence is computed against the effective scoring window (`max(before_window_days, after_window_days)`).
 
 ## Key decisions
 - Reuse existing `VelenClient.Query` integration pattern from prior phase handlers for deterministic testability.
@@ -35,11 +36,12 @@ Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are eva
 - For missing deployment timestamps, degrade gracefully instead of producing synthetic date-window queries.
 - Keep `ScoreHandler` as an empty struct and route query behavior through default `VelenClient.Query` with test-only override plumbing in package scope.
 - Keep metric selection schema-driven (first likely numeric metric) and run symmetric before/after window queries for each deployment.
+- Use the effective scoring window for confounding-density confidence while preserving the required `assessConfidence` helper signature via an internal windowed variant.
 
 ## Remaining issues
 - Analytics schemas may vary widely; first-metric discovery and date filtering logic must be robust to sparse metadata.
 - Some deployments may not map to PR authors in collected data; rollup behavior must handle missing author values safely.
-- Milestones M3-M4 are still marked pending in this plan artifact and require status reconciliation with implemented scorer behavior.
+- Milestone M4 is still marked pending in this plan artifact and requires status reconciliation with implemented scorer behavior.
 
 ## Links
 - `SPEC.md` (sections 3.2, 5.1, 5.3, 5.4)
