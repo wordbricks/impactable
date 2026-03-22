@@ -13,7 +13,7 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 - [x] Milestone 2 (completed): Add `phase_source_check.go` with `SourceCheckHandler` implementing `PhaseHandler`, including wait handling for missing/non-query-capable sources and wait-response resolution (`y` advance, `n` error).
 - [x] Milestone 3 (completed): Add `phase_collect.go` with `CollectHandler` implementing `PhaseHandler`, using Velen queries for PRs, tags, and releases; parse into `CollectedData`; persist to `runCtx`; return `DirectiveAdvancePhase`.
 - [x] Milestone 4 (completed): Add unit tests in `phase_source_check_test.go` and `phase_collect_test.go` with mockable Velen query/source behavior via interface or injectable functions.
-- [ ] Milestone 5 (not started): Add `DefaultHandlers(client *VelenClient) map[Phase]PhaseHandler` registration for SourceCheck + Collect plus temporary Link/Score/Report advance stubs; run `go build ./...` and `go test ./...`.
+- [x] Milestone 5 (completed): Add `DefaultHandlers(client *VelenClient) map[Phase]PhaseHandler` registration for SourceCheck + Collect plus temporary Link/Score/Report advance stubs; run `go build ./...` and `go test ./...`.
 
 ## Current progress
 - Plan created and checked in.
@@ -34,6 +34,12 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
   - `phase_source_check_test.go`: verifies ready->advance, not-ready->wait, wait-response handling (`y` advance, `n` error), and checker-error propagation.
   - `phase_collect_test.go`: verifies required SQL execution/order, parsed data population in `runCtx.CollectedData`, missing-source-key failure, query-error wrapping, and invalid-row parse failure.
   - `go test ./internal/gitimpact` passes with the new tests.
+- Milestone 5 completed by adding handler registration and global verification:
+  - Added `internal/gitimpact/default_handlers.go` with `DefaultHandlers(client *VelenClient)` map registration.
+  - Registered `SourceCheckHandler` and `CollectHandler`, and temporary `PhaseLink`/`PhaseScore`/`PhaseReport` stubs returning `DirectiveAdvancePhase`.
+  - Added `internal/gitimpact/default_handlers_test.go` to verify map coverage and stub directives.
+  - `go build ./...` passes.
+  - `go test ./...` passes.
 
 ## Key decisions
 - Use additive files/functions only; do not alter or redefine existing foundational types.
@@ -45,7 +51,7 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 - Keep collector parsing defensive for mixed JSON row scalar types (`string`, `float64`, `[]interface{}`, `json.Number`) to avoid coupling to one Velen JSON decoder shape.
 
 ## Remaining issues
-- Register default phase handlers map (`DefaultHandlers`) and run full-repo build/test verification.
+- None for Step 6 scope.
 
 ## Links
 - `SPEC.md` (sections 3.2, 4.1, 4.2, 4.3)
