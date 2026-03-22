@@ -20,9 +20,9 @@ const (
 type scoreQueryFn func(client *VelenClient, sourceKey string, sql string) (*QueryResult, error)
 
 // ScoreHandler calculates PR impact scores from analytics metrics and deployment windows.
-type ScoreHandler struct {
-	Query scoreQueryFn
-}
+type ScoreHandler struct{}
+
+var scoreQueryOverride scoreQueryFn
 
 // Handle runs Turn 3 scoring and advances to the reporting phase.
 func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResult, error) {
@@ -44,7 +44,7 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 		return nil, fmt.Errorf("analytics source key is required")
 	}
 
-	query := h.Query
+	query := scoreQueryOverride
 	if query == nil {
 		query = func(client *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
 			return client.Query(sourceKey, sql)

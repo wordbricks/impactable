@@ -121,23 +121,24 @@ func TestBuildContributorStats(t *testing.T) {
 }
 
 func TestScoreHandlerHandle_EmptyAnalyticsSchemaGracefulDegradation(t *testing.T) {
-	t.Parallel()
-
 	schemaCalls := 0
 	metricCalls := 0
-	handler := &ScoreHandler{
-		Query: func(_ *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
-			if sourceKey != "analytics-main" {
-				t.Fatalf("unexpected source key %q", sourceKey)
-			}
-			if sql == analyticsSchemaSQL {
-				schemaCalls++
-				return &QueryResult{Rows: [][]interface{}{}}, nil
-			}
-			metricCalls++
-			return &QueryResult{}, nil
-		},
+	scoreQueryOverride = func(_ *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
+		if sourceKey != "analytics-main" {
+			t.Fatalf("unexpected source key %q", sourceKey)
+		}
+		if sql == analyticsSchemaSQL {
+			schemaCalls++
+			return &QueryResult{Rows: [][]interface{}{}}, nil
+		}
+		metricCalls++
+		return &QueryResult{}, nil
 	}
+	t.Cleanup(func() {
+		scoreQueryOverride = nil
+	})
+
+	handler := &ScoreHandler{}
 
 	deployedAt := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
 	runCtx := &RunContext{
@@ -202,41 +203,42 @@ func TestScoreHandlerHandle_EmptyAnalyticsSchemaGracefulDegradation(t *testing.T
 }
 
 func TestScoreHandlerHandle_ScoresDeploymentsAndRollsUpContributors(t *testing.T) {
-	t.Parallel()
-
 	deployA := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
 	deployB := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
 
 	metricCall := 0
-	handler := &ScoreHandler{
-		Query: func(_ *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
-			if sourceKey != "analytics-main" {
-				t.Fatalf("unexpected source key %q", sourceKey)
-			}
-			if sql == analyticsSchemaSQL {
-				return &QueryResult{
-					Rows: [][]interface{}{
-						{"product_metrics", "metric_date", "date"},
-						{"product_metrics", "conversion_rate", "double precision"},
-					},
-				}, nil
-			}
-			metricCall++
-			switch metricCall {
-			case 1:
-				return &QueryResult{Rows: [][]interface{}{{10.0}}}, nil
-			case 2:
-				return &QueryResult{Rows: [][]interface{}{{15.0}}}, nil
-			case 3:
-				return &QueryResult{Rows: [][]interface{}{{20.0}}}, nil
-			case 4:
-				return &QueryResult{Rows: [][]interface{}{{10.0}}}, nil
-			default:
-				t.Fatalf("unexpected extra metric query: %q", sql)
-				return nil, nil
-			}
-		},
+	scoreQueryOverride = func(_ *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
+		if sourceKey != "analytics-main" {
+			t.Fatalf("unexpected source key %q", sourceKey)
+		}
+		if sql == analyticsSchemaSQL {
+			return &QueryResult{
+				Rows: [][]interface{}{
+					{"product_metrics", "metric_date", "date"},
+					{"product_metrics", "conversion_rate", "double precision"},
+				},
+			}, nil
+		}
+		metricCall++
+		switch metricCall {
+		case 1:
+			return &QueryResult{Rows: [][]interface{}{{10.0}}}, nil
+		case 2:
+			return &QueryResult{Rows: [][]interface{}{{15.0}}}, nil
+		case 3:
+			return &QueryResult{Rows: [][]interface{}{{20.0}}}, nil
+		case 4:
+			return &QueryResult{Rows: [][]interface{}{{10.0}}}, nil
+		default:
+			t.Fatalf("unexpected extra metric query: %q", sql)
+			return nil, nil
+		}
 	}
+	t.Cleanup(func() {
+		scoreQueryOverride = nil
+	})
+
+	handler := &ScoreHandler{}
 
 	runCtx := &RunContext{
 		VelenClient: &VelenClient{},
