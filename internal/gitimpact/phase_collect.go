@@ -138,12 +138,24 @@ func parseTagRows(result *QueryResult) ([]string, error) {
 		if len(row) < 2 {
 			return nil, fmt.Errorf("collect tags: row %d has %d columns, expected 2", idx, len(row))
 		}
-		if _, err := asTime(row[1]); err != nil {
+		createdAt, err := asTime(row[1])
+		if err != nil {
 			return nil, fmt.Errorf("collect tags: row %d invalid created_at: %w", idx, err)
 		}
-		tags = append(tags, asString(row[0]))
+		tags = append(tags, formatTagWithTimestamp(asString(row[0]), createdAt))
 	}
 	return tags, nil
+}
+
+func formatTagWithTimestamp(name string, createdAt time.Time) string {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return ""
+	}
+	if createdAt.IsZero() {
+		return trimmedName
+	}
+	return fmt.Sprintf("%s|%s", trimmedName, createdAt.UTC().Format(time.RFC3339))
 }
 
 func parseReleaseRows(result *QueryResult) ([]Release, error) {

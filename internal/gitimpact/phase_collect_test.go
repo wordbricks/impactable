@@ -79,7 +79,7 @@ func TestCollectHandlerHandle_Success(t *testing.T) {
 	if !reflect.DeepEqual(runCtx.CollectedData.PRs[0].Labels, []string{"feature/onboarding-v2", "ux"}) {
 		t.Fatalf("unexpected PR labels: %#v", runCtx.CollectedData.PRs[0].Labels)
 	}
-	if !reflect.DeepEqual(runCtx.CollectedData.Tags, []string{"v1.2.3"}) {
+	if !reflect.DeepEqual(runCtx.CollectedData.Tags, []string{"v1.2.3|2026-01-04T08:00:00Z"}) {
 		t.Fatalf("unexpected tags: %#v", runCtx.CollectedData.Tags)
 	}
 	if len(runCtx.CollectedData.Releases) != 1 || runCtx.CollectedData.Releases[0].TagName != "v1.2.3" {
@@ -163,4 +163,3 @@ func TestCollectHandlerHandle_InvalidPRRowsReturnError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
-
