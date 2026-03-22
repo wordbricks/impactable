@@ -1,0 +1,16 @@
+velen:
+  org: impactable
+  sources:
+    github: github-main
+    analytics: amplitude-prod
+
+analysis:
+  before_window_days: 7
+  after_window_days: 7
+  cooldown_hours: 24
+
+feature_grouping:
+  strategies:
+    - label_prefix
+    - branch_prefix
+  custom_mappings_file: feature-map.yaml

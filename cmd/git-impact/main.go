@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func main() {
@@ -120,6 +121,7 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 			return emitAnalyzeResult(state.output, stdout, payload, result)
 		},
 	}
+	analyzeCmd.Flags().SetNormalizeFunc(normalizeAnalyzeFlagName)
 	analyzeCmd.Flags().StringVar(&since, "since", "", "Analyze changes since YYYY-MM-DD")
 	analyzeCmd.Flags().IntVar(&prNum, "pr", 0, "Analyze a specific PR number")
 	analyzeCmd.Flags().StringVar(&feature, "feature", "", "Analyze a specific feature group")
@@ -149,6 +151,13 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 	root.AddCommand(analyzeCmd)
 	root.AddCommand(checkSourcesCmd)
 	return root, state
+}
+
+func normalizeAnalyzeFlagName(_ *pflag.FlagSet, name string) pflag.NormalizedName {
+	if strings.EqualFold(strings.TrimSpace(name), "r") {
+		return pflag.NormalizedName("pr")
+	}
+	return pflag.NormalizedName(name)
 }
 
 func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, runCtx *gitimpact.RunContext) (*gitimpact.AnalysisResult, error) {

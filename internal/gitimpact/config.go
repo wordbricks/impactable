@@ -1,7 +1,9 @@
 package gitimpact
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -31,6 +33,9 @@ func LoadConfig(configPath string) (Config, error) {
 	v.SetDefault("feature_grouping.custom_mappings_file", DefaultFeatureMappingsFile)
 
 	if err := v.ReadInConfig(); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Config{}, fmt.Errorf("config file %q not found; create it in the repo root or pass --config /path/to/impact-analyzer.yaml", resolvedPath)
+		}
 		return Config{}, fmt.Errorf("read config %q: %w", resolvedPath, err)
 	}
 
