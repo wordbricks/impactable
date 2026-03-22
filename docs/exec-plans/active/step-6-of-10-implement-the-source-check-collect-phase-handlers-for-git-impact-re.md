@@ -11,7 +11,7 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 ## Milestones
 - [x] Milestone 1 (completed): Confirm handler contracts and run-context expectations from existing `engine.go`, `check_sources.go`, and tests.
 - [x] Milestone 2 (completed): Add `phase_source_check.go` with `SourceCheckHandler` implementing `PhaseHandler`, including wait handling for missing/non-query-capable sources and wait-response resolution (`y` advance, `n` error).
-- [ ] Milestone 3 (not started): Add `phase_collect.go` with `CollectHandler` implementing `PhaseHandler`, using Velen queries for PRs, tags, and releases; parse into `CollectedData`; persist to `runCtx`; return `DirectiveAdvancePhase`.
+- [x] Milestone 3 (completed): Add `phase_collect.go` with `CollectHandler` implementing `PhaseHandler`, using Velen queries for PRs, tags, and releases; parse into `CollectedData`; persist to `runCtx`; return `DirectiveAdvancePhase`.
 - [ ] Milestone 4 (not started): Add unit tests in `phase_source_check_test.go` and `phase_collect_test.go` with mockable Velen query/source behavior via interface or injectable functions.
 - [ ] Milestone 5 (not started): Add `DefaultHandlers(client *VelenClient) map[Phase]PhaseHandler` registration for SourceCheck + Collect plus temporary Link/Score/Report advance stubs; run `go build ./...` and `go test ./...`.
 
@@ -25,6 +25,11 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
   - advances immediately when GitHub + Analytics are both QUERY-capable;
   - issues `DirectiveWait` with deterministic message when not ready;
   - resolves wait input from `LastWaitResponse` (`y` => advance, `n` => hard error, other => validation error).
+- Milestone 3 completed by adding `internal/gitimpact/phase_collect.go` with `CollectHandler` that:
+  - issues the required PR/tag/release SQL queries via injectable query function (defaults to `VelenClient.Query`);
+  - derives `{since}` from `runCtx.AnalysisCtx.Since` (fallback `1970-01-01`);
+  - parses PR/tag/release rows into existing `PR`, `Release`, and `CollectedData` types;
+  - stores parsed output in `runCtx.CollectedData` and returns `DirectiveAdvancePhase`.
 
 ## Key decisions
 - Use additive files/functions only; do not alter or redefine existing foundational types.
@@ -33,9 +38,10 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 - Treat wait responses as phase-local state read from `runCtx.AnalysisCtx.LastWaitResponse` so source-check confirmation can resolve within the existing engine retry loop.
 - Use config-driven GitHub source key (`cfg.Velen.Sources.GitHub`) for collection queries, with SQL assembled deterministically for test assertions.
 - Use strict wait-response semantics for source check (`y`/`n` only) to avoid silent continuation on ambiguous input.
+- Keep collector parsing defensive for mixed JSON row scalar types (`string`, `float64`, `[]interface{}`, `json.Number`) to avoid coupling to one Velen JSON decoder shape.
 
 ## Remaining issues
-- Align PR/tag/release SQL parsing with `QueryResult` column order and null-time handling.
+- Add focused unit tests for SourceCheck/Collect handlers and parser behavior (success path + failure path).
 
 ## Links
 - `SPEC.md` (sections 3.2, 4.1, 4.2, 4.3)
