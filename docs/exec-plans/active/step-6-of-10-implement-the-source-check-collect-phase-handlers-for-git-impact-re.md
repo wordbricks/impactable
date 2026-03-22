@@ -9,7 +9,7 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 - Existing `internal/gitimpact/` runtime already includes base types, engine loop, observer, Velen client, and `CheckSources`; this step must add phase handlers and registration without redefining existing types.
 
 ## Milestones
-- [ ] Milestone 1 (not started): Confirm handler contracts and run-context expectations from existing `engine.go`, `check_sources.go`, and tests.
+- [x] Milestone 1 (completed): Confirm handler contracts and run-context expectations from existing `engine.go`, `check_sources.go`, and tests.
 - [ ] Milestone 2 (not started): Add `phase_source_check.go` with `SourceCheckHandler` implementing `PhaseHandler`, including wait handling for missing/non-query-capable sources and wait-response resolution (`y` advance, `n` error).
 - [ ] Milestone 3 (not started): Add `phase_collect.go` with `CollectHandler` implementing `PhaseHandler`, using Velen queries for PRs, tags, and releases; parse into `CollectedData`; persist to `runCtx`; return `DirectiveAdvancePhase`.
 - [ ] Milestone 4 (not started): Add unit tests in `phase_source_check_test.go` and `phase_collect_test.go` with mockable Velen query/source behavior via interface or injectable functions.
@@ -17,12 +17,16 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 
 ## Current progress
 - Plan created and checked in.
-- Implementation milestones are not started.
+- Milestone 1 completed by confirming the `PhaseHandler` contract (`Handle(context.Context, *RunContext)`) and engine wait-cycle behavior (`runCtx.AnalysisCtx.LastWaitResponse` populated after `DirectiveWait`).
+- Confirmed `CheckSources(ctx, client, cfg)` already encapsulates auth/org/source discovery and returns the exact readiness bits needed by `SourceCheckHandler` (`GitHubOK`, `AnalyticsOK`, and `Errors`).
+- Confirmed `RunContext.CollectedData` shape (`PRs []PR`, `Tags []string`, `Releases []Release`) matches Step 6 collector output targets without adding or redefining core types.
 
 ## Key decisions
 - Use additive files/functions only; do not alter or redefine existing foundational types.
 - Prefer dependency injection (interface/function fields) in handlers to keep unit tests isolated from real `velen` command execution.
 - Keep Link/Score/Report handlers as explicit stubs returning `DirectiveAdvancePhase` until their dedicated steps.
+- Treat wait responses as phase-local state read from `runCtx.AnalysisCtx.LastWaitResponse` so source-check confirmation can resolve within the existing engine retry loop.
+- Use config-driven GitHub source key (`cfg.Velen.Sources.GitHub`) for collection queries, with SQL assembled deterministically for test assertions.
 
 ## Remaining issues
 - Define exact wait-message wording for Source Check to be clear and deterministic for tests.
