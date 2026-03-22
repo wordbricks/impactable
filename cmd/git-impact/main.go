@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +12,7 @@ import (
 
 	"impactable/internal/gitimpact"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +67,7 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 	analyzeCmd := &cobra.Command{
 		Use:   "analyze",
 		Short: "Run impact analysis",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			analysisCtx, err := gitimpact.NewAnalysisContext(since, prNum, feature, state.configPath)
 			if err != nil {
 				return err
@@ -73,14 +77,45 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 				return err
 			}
 
+			runCtx := &gitimpact.RunContext{
+				Config:      &cfg,
+				AnalysisCtx: analysisCtx,
+				VelenClient: gitimpact.NewVelenClient(0),
+			}
+
+			interactiveTUI := state.output == "text" && isTerminalWriter(stdout)
+			if interactiveTUI {
+				result, err := runAnalyzeWithTUI(cmd.Context(), stdin, stdout, runCtx)
+				if err != nil {
+					return err
+				}
+				if result == nil {
+					return fmt.Errorf("analysis completed without a result")
+				}
+				return nil
+			}
+
+			waitHandler := newNonInteractiveWaitHandler()
+			if isTerminalReader(stdin) {
+				waitHandler = newPromptWaitHandler(stdin, stdout)
+			}
+			engine := gitimpact.NewDefaultEngine(runCtx.VelenClient, nil, waitHandler)
+			result, err := engine.Run(cmd.Context(), runCtx)
+			if err != nil {
+				return err
+			}
+			if result == nil {
+				return fmt.Errorf("analysis completed without a result")
+			}
+
 			payload := map[string]any{
 				"command":        "analyze",
-				"status":         "not_implemented",
-				"message":        "analysis not yet implemented",
+				"status":         "ok",
+				"result":         result,
 				"context":        analysisCtx,
 				"initial_prompt": gitimpact.BuildInitialPrompt(analysisCtx, &cfg),
 			}
-			return emitAnalyzeResult(state.output, stdout, payload, analysisCtx)
+			return emitAnalyzeResult(state.output, stdout, payload, result)
 		},
 	}
 	analyzeCmd.Flags().StringVar(&since, "since", "", "Analyze changes since YYYY-MM-DD")
@@ -114,17 +149,54 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 	return root, state
 }
 
-func emitAnalyzeResult(output string, stdout io.Writer, payload map[string]any, analysisCtx *gitimpact.AnalysisContext) error {
+func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, runCtx *gitimpact.RunContext) (*gitimpact.AnalysisResult, error) {
+	phases := gitimpact.DefaultAnalysisPhases()
+	model := gitimpact.NewAnalysisModel(phases)
+	program := tea.NewProgram(
+		&model,
+		tea.WithInput(nil),
+		tea.WithOutput(stdout),
+		tea.WithoutSignalHandler(),
+	)
+
+	runDone := make(chan error, 1)
+	go func() {
+		_, err := program.Run()
+		runDone <- err
+	}()
+
+	observer := gitimpact.NewTUIObserver(program)
+	waitHandler := newNonInteractiveWaitHandler()
+	if isTerminalReader(stdin) {
+		waitHandler = newPromptWaitHandler(stdin, stdout)
+	}
+	engine := gitimpact.NewDefaultEngine(runCtx.VelenClient, observer, waitHandler)
+
+	result, runErr := engine.Run(ctx, runCtx)
+	programErr := <-runDone
+	if runErr != nil {
+		return nil, runErr
+	}
+	if programErr != nil {
+		return nil, fmt.Errorf("run analysis progress TUI: %w", programErr)
+	}
+	return result, nil
+}
+
+func emitAnalyzeResult(output string, stdout io.Writer, payload map[string]any, result *gitimpact.AnalysisResult) error {
 	if output == "json" {
 		return emitJSON(stdout, payload)
 	}
 
-	contextBody, err := json.MarshalIndent(analysisCtx, "", "  ")
+	body := map[string]any{
+		"status": "ok",
+		"result": result,
+	}
+	textBody, err := json.MarshalIndent(body, "", "  ")
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintln(stdout, "analysis not yet implemented")
-	_, _ = fmt.Fprintln(stdout, string(contextBody))
+	_, _ = fmt.Fprintln(stdout, string(textBody))
 	return nil
 }
 
@@ -197,6 +269,41 @@ func isTerminalWriter(writer io.Writer) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func isTerminalReader(reader io.Reader) bool {
+	file, ok := reader.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func newPromptWaitHandler(stdin io.Reader, stdout io.Writer) gitimpact.WaitHandler {
+	reader := bufio.NewReader(stdin)
+	return func(message string) (string, error) {
+		prompt := strings.TrimSpace(message)
+		if prompt != "" {
+			_, _ = fmt.Fprintln(stdout, prompt)
+		}
+		_, _ = fmt.Fprint(stdout, "> ")
+
+		response, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		return strings.TrimSpace(response), nil
+	}
+}
+
+func newNonInteractiveWaitHandler() gitimpact.WaitHandler {
+	return func(message string) (string, error) {
+		return "", fmt.Errorf("analysis requires user input: %s", strings.TrimSpace(message))
+	}
 }
 
 func sourceLabel(source *gitimpact.Source) string {
