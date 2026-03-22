@@ -7,26 +7,30 @@ Create the initial `git-impact` Go project scaffold described in `SPEC.md`, incl
 `SPEC.md` defines the Git Impact Analyzer as a new monorepo CLI with `analyze` and `check-sources` commands plus config-driven analysis behavior. `ARCHITECTURE.md` requires thin `cmd/*` entrypoints and behavior inside `internal/*` packages. This step establishes the first shippable foundation before implementing full analysis logic.
 
 ## Milestones
-- [ ] M1 (`not started`): Add `cmd/git-impact/main.go` with Cobra root command and stub `analyze` + `check-sources` subcommands, delegating implementation surface to `internal/gitimpact`.
-- [ ] M2 (`not started`): Create `internal/gitimpact/types.go` with initial domain types (`Config`, `AnalysisContext`, `PR`, `Deployment`, `FeatureGroup`, `ContributorStats`, `PRImpact`, `AnalysisResult`) aligned to `SPEC.md` terminology.
-- [ ] M3 (`not started`): Implement `internal/gitimpact/config.go` for YAML config loading via Viper using `impact-analyzer.yaml` schema from SPEC section 8, with defaults for analysis windows.
-- [ ] M4 (`not started`): Implement `internal/gitimpact/context.go` for converting CLI arguments into `AnalysisContext`.
-- [ ] M5 (`not started`): Add repo-root `./git-impact` executable shim matching existing wrapper style (`./ralph-loop`, `./wtl`).
-- [ ] M6 (`not started`): Add/update dependencies in `go.mod` for Cobra and Viper and write tests for config loading + context construction.
-- [ ] M7 (`not started`): Run validation (`go build ./...`, relevant tests), address failures, and confirm scaffold compiles cleanly.
+- [x] M1 (`completed`): Added `cmd/git-impact/main.go` with thin entrypoint into `internal/gitimpact` and Cobra-backed `analyze` + `check-sources` stubs.
+- [x] M2 (`completed`): Created `internal/gitimpact/types.go` with initial domain/config/result structs aligned to `SPEC.md`.
+- [x] M3 (`completed`): Implemented `internal/gitimpact/config.go` using Viper for `impact-analyzer.yaml` load/decode with default analysis windows.
+- [x] M4 (`completed`): Implemented `internal/gitimpact/context.go` to convert CLI args into validated `AnalysisContext`.
+- [x] M5 (`completed`): Added repo-root `./git-impact` executable shim matching existing wrapper style.
+- [x] M6 (`completed`): Updated `go.mod`/`go.sum` with Cobra + Viper dependencies and added tests for config loading/context construction plus command-stub behavior.
+- [x] M7 (`completed`): Validation passed via `go test ./...` and `go build ./...` (with `GOCACHE=/tmp/go-build-cache` for sandbox compatibility).
 
 ## Current progress
-- Execution plan initialized.
-- Implementation milestones not yet started.
+- Step 1 scaffold is implemented end-to-end and committed-ready.
+- New package surface exists at `internal/gitimpact` (`cli.go`, `types.go`, `config.go`, `context.go`) with command stubs and shared config/context plumbing.
+- Tests now cover config defaults/overrides, CLI-arg context conversion, and stub command execution paths.
+- Validation baseline is green for the repository after dependency additions.
 
 ## Key decisions
 - Keep `cmd/git-impact` thin per architecture boundary rules; place behavior in `internal/gitimpact`.
 - Start with command stubs and testable config/context primitives to enable incremental follow-up steps.
 - Encode defaults in config load path so CLI runs remain predictable without full user config.
+- Keep `analyze` and `check-sources` behavior explicitly stubbed by returning `not implemented` sentinel errors after config/context validation.
+- Resolve relative config paths against the caller working directory during context construction.
 
 ## Remaining issues
-- Exact field-level shape for all domain structs may evolve in later steps as WTL phase integration is implemented.
-- Source-check and analyze command runtime logic remain stubbed in this step by design.
+- Exact field-level shape for some domain structs may evolve in later steps as WTL phase integration is implemented.
+- `analyze` and `check-sources` command runtime logic remains stubbed in this step by design.
 
 ## Links
 - `SPEC.md`
