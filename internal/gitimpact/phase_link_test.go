@@ -33,6 +33,30 @@ func TestInferDeployment_PrefersReleaseOverTag(t *testing.T) {
 	}
 }
 
+func TestInferDeployment_ChoosesNearestReleaseWithinWindow(t *testing.T) {
+	t.Parallel()
+
+	mergedAt := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
+	pr := PR{Number: 55, MergedAt: mergedAt}
+
+	deployment, ok := inferDeployment(pr, []Release{
+		{TagName: "v2.1.0", PublishedAt: mergedAt.Add(6 * time.Hour)},
+		{TagName: "v2.0.9", PublishedAt: mergedAt.Add(2 * time.Hour)},
+	}, nil)
+	if !ok {
+		t.Fatal("expected deployment inference to succeed")
+	}
+	if deployment.Source != "release" {
+		t.Fatalf("expected release source, got %q", deployment.Source)
+	}
+	if deployment.Marker != "v2.0.9" {
+		t.Fatalf("expected nearest release marker v2.0.9, got %q", deployment.Marker)
+	}
+	if !deployment.DeployedAt.Equal(mergedAt.Add(2 * time.Hour)) {
+		t.Fatalf("unexpected deployed_at: %s", deployment.DeployedAt)
+	}
+}
+
 func TestInferDeployment_UsesVersionTagWhenReleaseUnavailable(t *testing.T) {
 	t.Parallel()
 
@@ -57,6 +81,31 @@ func TestInferDeployment_UsesVersionTagWhenReleaseUnavailable(t *testing.T) {
 	}
 	if !deployment.DeployedAt.Equal(tagCreatedAt) {
 		t.Fatalf("expected deployed_at to equal tag timestamp, got %s", deployment.DeployedAt)
+	}
+}
+
+func TestInferDeployment_ChoosesNearestVersionTagWithinWindow(t *testing.T) {
+	t.Parallel()
+
+	mergedAt := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
+	pr := PR{Number: 78, MergedAt: mergedAt}
+
+	deployment, ok := inferDeployment(pr, nil, []string{
+		formatTagWithTimestamp("v2.2.0", mergedAt.Add(10*time.Hour)),
+		formatTagWithTimestamp("release-2.1.9", mergedAt.Add(3*time.Hour)),
+		formatTagWithTimestamp("hotfix-2.1.9", mergedAt.Add(1*time.Hour)),
+	})
+	if !ok {
+		t.Fatal("expected deployment inference to succeed")
+	}
+	if deployment.Source != "tag" {
+		t.Fatalf("expected tag source, got %q", deployment.Source)
+	}
+	if deployment.Marker != "release-2.1.9" {
+		t.Fatalf("expected nearest version tag marker, got %q", deployment.Marker)
+	}
+	if !deployment.DeployedAt.Equal(mergedAt.Add(3 * time.Hour)) {
+		t.Fatalf("unexpected deployed_at: %s", deployment.DeployedAt)
 	}
 }
 
@@ -93,6 +142,31 @@ func TestDetectAmbiguousDeployments(t *testing.T) {
 	prs := []PR{
 		{Number: 1, MergedAt: time.Date(2026, 2, 10, 11, 0, 0, 0, time.UTC)},
 		{Number: 2, MergedAt: time.Date(2026, 2, 10, 19, 0, 0, 0, time.UTC)},
+	}
+
+	items := detectAmbiguousDeployments(prs, releases)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 ambiguous deployments, got %d", len(items))
+	}
+	for _, item := range items {
+		if !reflect.DeepEqual(item.Options, []string{"v1.0.0", "v1.0.1"}) {
+			t.Fatalf("unexpected options for PR #%d: %#v", item.PRNumber, item.Options)
+		}
+	}
+}
+
+func TestDetectAmbiguousDeployments_DoesNotChainBeyond24HourWindow(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
+	releases := []Release{
+		{TagName: "v1.0.0", PublishedAt: base},
+		{TagName: "v1.0.1", PublishedAt: base.Add(20 * time.Hour)},
+		{TagName: "v1.0.2", PublishedAt: base.Add(35 * time.Hour)},
+	}
+	prs := []PR{
+		{Number: 1, MergedAt: base.Add(2 * time.Hour)},
+		{Number: 2, MergedAt: base.Add(22 * time.Hour)},
 	}
 
 	items := detectAmbiguousDeployments(prs, releases)

@@ -144,46 +144,50 @@ func detectAmbiguousDeployments(prs []PR, releases []Release) []AmbiguousDeploym
 		return nil
 	}
 
-	sortedReleases := append([]Release(nil), releases...)
+	sortedReleases := make([]Release, 0, len(releases))
+	for _, release := range releases {
+		if release.PublishedAt.IsZero() {
+			continue
+		}
+		sortedReleases = append(sortedReleases, release)
+	}
+	if len(sortedReleases) < 2 {
+		return nil
+	}
+
 	sort.Slice(sortedReleases, func(i, j int) bool {
 		return sortedReleases[i].PublishedAt.Before(sortedReleases[j].PublishedAt)
 	})
 
 	ambiguousByPR := map[int]AmbiguousDeployment{}
-	for start := 0; start < len(sortedReleases); {
-		end := start + 1
-		for end < len(sortedReleases) {
-			if sortedReleases[end].PublishedAt.Sub(sortedReleases[end-1].PublishedAt) > ambiguousWindow {
-				break
-			}
-			end++
+	for start := 0; start < len(sortedReleases)-1; start++ {
+		windowStart := sortedReleases[start].PublishedAt
+		windowEnd := windowStart.Add(ambiguousWindow)
+		windowReleases := releasesWithinWindow(sortedReleases[start:], windowEnd)
+		if len(windowReleases) < 2 {
+			continue
 		}
 
-		cluster := sortedReleases[start:end]
-		if len(cluster) > 1 {
-			windowStart := cluster[0].PublishedAt
-			windowEnd := cluster[len(cluster)-1].PublishedAt
-			prNumbers := prsMergedWithinWindow(prs, windowStart, windowEnd)
-			if len(prNumbers) > 1 {
-				options := clusterReleaseOptions(cluster)
-				for _, prNumber := range prNumbers {
-					current, ok := ambiguousByPR[prNumber]
-					if !ok {
-						ambiguousByPR[prNumber] = AmbiguousDeployment{
-							PRNumber: prNumber,
-							Options:  append([]string(nil), options...),
-							Reason:   "multiple releases were published within 24h while multiple PRs merged in that window",
-						}
-						continue
-					}
+		prNumbers := prsMergedWithinWindow(prs, windowStart, windowEnd)
+		if len(prNumbers) < 2 {
+			continue
+		}
 
-					current.Options = mergeDistinctOptions(current.Options, options)
-					ambiguousByPR[prNumber] = current
+		options := clusterReleaseOptions(windowReleases)
+		for _, prNumber := range prNumbers {
+			current, ok := ambiguousByPR[prNumber]
+			if !ok {
+				ambiguousByPR[prNumber] = AmbiguousDeployment{
+					PRNumber: prNumber,
+					Options:  append([]string(nil), options...),
+					Reason:   "multiple releases were published within 24h while multiple PRs merged in that window",
 				}
+				continue
 			}
-		}
 
-		start = end
+			current.Options = mergeDistinctOptions(current.Options, options)
+			ambiguousByPR[prNumber] = current
+		}
 	}
 
 	if len(ambiguousByPR) == 0 {
@@ -199,6 +203,17 @@ func detectAmbiguousDeployments(prs []PR, releases []Release) []AmbiguousDeploym
 		return result[i].PRNumber < result[j].PRNumber
 	})
 	return result
+}
+
+func releasesWithinWindow(sortedReleases []Release, windowEnd time.Time) []Release {
+	window := make([]Release, 0, len(sortedReleases))
+	for _, release := range sortedReleases {
+		if release.PublishedAt.After(windowEnd) {
+			break
+		}
+		window = append(window, release)
+	}
+	return window
 }
 
 func isVersionTag(name string) bool {
