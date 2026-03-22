@@ -54,6 +54,8 @@ func (c *VelenClient) ListSources() ([]Source, error) {
 		return nil, err
 	}
 
+	payload = extractVelenData(payload)
+
 	var direct []Source
 	if err := json.Unmarshal(payload, &direct); err == nil {
 		return direct, nil
@@ -61,9 +63,15 @@ func (c *VelenClient) ListSources() ([]Source, error) {
 
 	var envelope struct {
 		Sources []Source `json:"sources"`
+		Items   []Source `json:"items"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err == nil {
-		return envelope.Sources, nil
+		if len(envelope.Sources) > 0 {
+			return envelope.Sources, nil
+		}
+		if len(envelope.Items) > 0 {
+			return envelope.Items, nil
+		}
 	}
 
 	return nil, fmt.Errorf("decode velen \"source list\" response")
@@ -75,16 +83,24 @@ func (c *VelenClient) ShowSource(key string) (*Source, error) {
 		return nil, err
 	}
 
+	payload = extractVelenData(payload)
+
 	result := &Source{}
-	if err := json.Unmarshal(payload, result); err == nil {
+	if err := json.Unmarshal(payload, result); err == nil && result.SourceKey() != "" {
 		return result, nil
 	}
 
 	var envelope struct {
 		Source Source `json:"source"`
+		Item   Source `json:"item"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err == nil {
-		return &envelope.Source, nil
+		if envelope.Source.SourceKey() != "" {
+			return &envelope.Source, nil
+		}
+		if envelope.Item.SourceKey() != "" {
+			return &envelope.Item, nil
+		}
 	}
 
 	return nil, fmt.Errorf("decode velen \"source show\" response")
@@ -103,7 +119,7 @@ func (c *VelenClient) runAndDecode(target any, args ...string) error {
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(payload, target); err != nil {
+	if err := json.Unmarshal(extractVelenData(payload), target); err != nil {
 		return fmt.Errorf("decode velen response: %w", err)
 	}
 	return nil
@@ -130,7 +146,8 @@ func (c *VelenClient) run(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := runner(ctx, binary, args...)
+	commandArgs := append([]string{"--output", "json"}, args...)
+	cmd := runner(ctx, binary, commandArgs...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -153,6 +170,24 @@ func (c *VelenClient) run(args ...string) ([]byte, error) {
 	}
 
 	return bytes.TrimSpace(stdout.Bytes()), nil
+}
+
+func extractVelenData(payload []byte) []byte {
+	trimmed := bytes.TrimSpace(payload)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return trimmed
+	}
+
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil {
+		return trimmed
+	}
+	if len(bytes.TrimSpace(envelope.Data)) == 0 {
+		return trimmed
+	}
+	return bytes.TrimSpace(envelope.Data)
 }
 
 func buildVelenError(exitCode int, stdout string, stderr string) *VelenError {

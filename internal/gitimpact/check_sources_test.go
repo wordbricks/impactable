@@ -52,6 +52,27 @@ func TestCheckSources_TableDriven(t *testing.T) {
 			wantErrorContains: []string{"analytics source \"mixpanel-main\" does not support QUERY"},
 		},
 		{
+			name: "provider and query fields match current velen payloads",
+			cfg: Config{
+				Velen: VelenConfig{
+					Sources: VelenSources{
+						GitHub:    "github-main",
+						Analytics: "amplitude-prod",
+					},
+				},
+			},
+			sources: []Source{
+				{Name: "getgpt-repo", Provider: "github", Query: "yes", Status: "active"},
+				{Name: "getgpt-ga", Provider: "ga", Query: true, Status: "active"},
+			},
+			wantGitHubKey:         "getgpt-repo",
+			wantAnalyticsKey:      "getgpt-ga",
+			wantGitHubOK:          true,
+			wantAnalyticsOK:       true,
+			wantOrgName:           "Impactable",
+			wantNoErrorSubstrings: []string{"not found", "does not support QUERY"},
+		},
+		{
 			name: "fallback to configured keys when provider types do not match",
 			cfg: Config{
 				Velen: VelenConfig{
@@ -128,6 +149,12 @@ func TestCheckSources_TableDriven(t *testing.T) {
 			}
 			if result.OrgName != tt.wantOrgName {
 				t.Fatalf("unexpected org name: got %q, want %q", result.OrgName, tt.wantOrgName)
+			}
+			if tt.wantGitHubKey != "" && tt.cfg.Velen.Sources.GitHub != "" && tt.cfg.Velen.Sources.GitHub != tt.wantGitHubKey {
+				t.Fatalf("expected config github source to be updated to %q, got %q", tt.wantGitHubKey, tt.cfg.Velen.Sources.GitHub)
+			}
+			if tt.wantAnalyticsKey != "" && tt.cfg.Velen.Sources.Analytics != "" && tt.cfg.Velen.Sources.Analytics != tt.wantAnalyticsKey {
+				t.Fatalf("expected config analytics source to be updated to %q, got %q", tt.wantAnalyticsKey, tt.cfg.Velen.Sources.Analytics)
 			}
 
 			for _, expected := range tt.wantErrorContains {
@@ -216,7 +243,17 @@ func TestCheckSourcesHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 
-	cmdText := strings.Join(os.Args[separator+1:], " ")
+	args := os.Args[separator+1:]
+	filteredArgs := make([]string, 0, len(args))
+	for idx := 0; idx < len(args); idx++ {
+		if args[idx] == "--output" && idx+1 < len(args) {
+			idx++
+			continue
+		}
+		filteredArgs = append(filteredArgs, args[idx])
+	}
+
+	cmdText := strings.Join(filteredArgs, " ")
 	if payload.FailCommand != "" && payload.FailCommand == cmdText {
 		_, _ = os.Stderr.WriteString(payload.FailMessage)
 		os.Exit(7)
@@ -242,7 +279,7 @@ func sourceKey(source *Source) string {
 	if source == nil {
 		return ""
 	}
-	return source.Key
+	return source.SourceKey()
 }
 
 func containsString(values []string, target string) bool {

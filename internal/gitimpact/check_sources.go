@@ -55,18 +55,21 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 	if result.OrgName == "" {
 		result.OrgName = strings.TrimSpace(org.Slug)
 	}
+	if result.OrgName == "" {
+		result.OrgName = strings.TrimSpace(org.Org)
+	}
 	if result.OrgName == "" && whoAmI != nil {
 		result.OrgName = strings.TrimSpace(whoAmI.Org)
 	}
 
 	for idx := range sources {
 		source := &sources[idx]
-		providerType := strings.ToLower(strings.TrimSpace(source.ProviderType))
-		if result.GitHubSource == nil && strings.Contains(providerType, "github") {
+		providerType := strings.ToLower(strings.TrimSpace(source.ProviderLabel()))
+		if result.GitHubSource == nil && isGitHubProvider(providerType) {
 			result.GitHubSource = source
 			continue
 		}
-		if result.AnalyticsSource == nil && containsAny(providerType, "analytics", "amplitude", "mixpanel", "segment") {
+		if result.AnalyticsSource == nil && isAnalyticsProvider(providerType) {
 			result.AnalyticsSource = source
 		}
 	}
@@ -82,18 +85,24 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 	if result.GitHubSource == nil {
 		result.Errors = append(result.Errors, "github source not found")
 	} else {
+		if cfg != nil {
+			cfg.Velen.Sources.GitHub = result.GitHubSource.SourceKey()
+		}
 		result.GitHubOK = result.GitHubSource.SupportsQuery()
 		if !result.GitHubOK {
-			result.Errors = append(result.Errors, fmt.Sprintf("github source %q does not support QUERY", result.GitHubSource.Key))
+			result.Errors = append(result.Errors, fmt.Sprintf("github source %q does not support QUERY", result.GitHubSource.SourceKey()))
 		}
 	}
 
 	if result.AnalyticsSource == nil {
 		result.Errors = append(result.Errors, "analytics source not found")
 	} else {
+		if cfg != nil {
+			cfg.Velen.Sources.Analytics = result.AnalyticsSource.SourceKey()
+		}
 		result.AnalyticsOK = result.AnalyticsSource.SupportsQuery()
 		if !result.AnalyticsOK {
-			result.Errors = append(result.Errors, fmt.Sprintf("analytics source %q does not support QUERY", result.AnalyticsSource.Key))
+			result.Errors = append(result.Errors, fmt.Sprintf("analytics source %q does not support QUERY", result.AnalyticsSource.SourceKey()))
 		}
 	}
 
@@ -116,9 +125,21 @@ func sourceByKey(sources []Source, key string) *Source {
 	}
 	for idx := range sources {
 		source := &sources[idx]
-		if strings.EqualFold(strings.TrimSpace(source.Key), trimmed) {
+		if strings.EqualFold(source.SourceKey(), trimmed) {
 			return source
 		}
 	}
 	return nil
+}
+
+func isGitHubProvider(provider string) bool {
+	return strings.Contains(provider, "github")
+}
+
+func isAnalyticsProvider(provider string) bool {
+	normalized := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(provider), "_", "-"), " ", "-")
+	if normalized == "ga" || normalized == "google-analytics" {
+		return true
+	}
+	return containsAny(normalized, "analytics", "amplitude", "mixpanel", "segment")
 }

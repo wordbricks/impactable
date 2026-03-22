@@ -33,6 +33,16 @@ func TestSourceSupportsQuery(t *testing.T) {
 	if source.SupportsQuery() {
 		t.Fatalf("expected SupportsQuery to be false")
 	}
+
+	source = Source{Query: "yes"}
+	if !source.SupportsQuery() {
+		t.Fatalf("expected SupportsQuery to be true for query=yes")
+	}
+
+	source = Source{Query: true}
+	if !source.SupportsQuery() {
+		t.Fatalf("expected SupportsQuery to be true for query=true")
+	}
 }
 
 func TestWhoAmISuccess(t *testing.T) {
@@ -47,7 +57,7 @@ func TestWhoAmISuccess(t *testing.T) {
 		t.Fatalf("unexpected whoami result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "auth", "whoami"})
+	expectArgs(t, argsFile, []string{"velen", "--output", "json", "auth", "whoami"})
 }
 
 func TestCurrentOrgSuccess(t *testing.T) {
@@ -62,7 +72,7 @@ func TestCurrentOrgSuccess(t *testing.T) {
 		t.Fatalf("unexpected org result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "org", "current"})
+	expectArgs(t, argsFile, []string{"velen", "--output", "json", "org", "current"})
 }
 
 func TestListSourcesSuccess(t *testing.T) {
@@ -80,7 +90,7 @@ func TestListSourcesSuccess(t *testing.T) {
 		t.Fatalf("unexpected source result: %+v", result[0])
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "source", "list"})
+	expectArgs(t, argsFile, []string{"velen", "--output", "json", "source", "list"})
 }
 
 func TestShowSourceSuccess(t *testing.T) {
@@ -95,7 +105,7 @@ func TestShowSourceSuccess(t *testing.T) {
 		t.Fatalf("unexpected source result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "source", "show", "amplitude-prod"})
+	expectArgs(t, argsFile, []string{"velen", "--output", "json", "source", "show", "amplitude-prod"})
 }
 
 func TestQuerySuccessAndSafeArgs(t *testing.T) {
@@ -111,7 +121,51 @@ func TestQuerySuccessAndSafeArgs(t *testing.T) {
 		t.Fatalf("unexpected query result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "query", "--source", "github-main", "--sql", sql})
+	expectArgs(t, argsFile, []string{"velen", "--output", "json", "query", "--source", "github-main", "--sql", sql})
+}
+
+func TestCurrentOrgEnvelopeSuccess(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	client := newHelperClient(t, "org_envelope_success", time.Second, argsFile)
+
+	result, err := client.CurrentOrg()
+	if err != nil {
+		t.Fatalf("CurrentOrg returned error: %v", err)
+	}
+	if result.Org != "impactable" {
+		t.Fatalf("unexpected org result: %+v", result)
+	}
+}
+
+func TestListSourcesEnvelopeSuccess(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	client := newHelperClient(t, "source_list_envelope_success", time.Second, argsFile)
+
+	result, err := client.ListSources()
+	if err != nil {
+		t.Fatalf("ListSources returned error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 sources, got %d", len(result))
+	}
+	if result[0].SourceKey() != "getgpt-repo" || result[0].ProviderLabel() != "github" || !result[0].SupportsQuery() {
+		t.Fatalf("unexpected first source result: %+v", result[0])
+	}
+	if result[1].SourceKey() != "getgpt-ga" || result[1].ProviderLabel() != "ga" || !result[1].SupportsQuery() {
+		t.Fatalf("unexpected second source result: %+v", result[1])
+	}
+}
+
+func TestQueryEnvelopeSuccess(t *testing.T) {
+	client := newHelperClient(t, "query_envelope_success", time.Second, "")
+
+	result, err := client.Query("github-main", "SELECT 1")
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
+	if result.RowCount != 1 || len(result.Rows) != 1 || len(result.Columns) != 1 {
+		t.Fatalf("unexpected query result: %+v", result)
+	}
 }
 
 func TestNonZeroExitReturnsStructuredVelenError(t *testing.T) {
@@ -251,14 +305,23 @@ func TestVelenHelperProcess(t *testing.T) {
 	case "org_success":
 		_, _ = os.Stdout.WriteString(`{"slug":"impactable","name":"Impactable"}`)
 		os.Exit(0)
+	case "org_envelope_success":
+		_, _ = os.Stdout.WriteString(`{"command":"org current","data":{"org":"impactable","resolved":true,"source":"config"},"ok":true,"warnings":[]}`)
+		os.Exit(0)
 	case "source_list_success":
 		_, _ = os.Stdout.WriteString(`[{"key":"github-main","name":"GitHub","provider_type":"GITHUB","capabilities":["QUERY","SYNC"]}]`)
+		os.Exit(0)
+	case "source_list_envelope_success":
+		_, _ = os.Stdout.WriteString(`{"command":"source list","data":{"items":[{"name":"getgpt-repo","provider":"github","query":"yes","status":"active"},{"name":"getgpt-ga","provider":"ga","query":true,"status":"active"}]},"ok":true,"warnings":[]}`)
 		os.Exit(0)
 	case "source_show_success":
 		_, _ = os.Stdout.WriteString(`{"key":"amplitude-prod","name":"Amplitude","provider_type":"ANALYTICS","capabilities":["QUERY"]}`)
 		os.Exit(0)
 	case "query_success":
 		_, _ = os.Stdout.WriteString(`{"columns":["id"],"rows":[[1]],"row_count":1}`)
+		os.Exit(0)
+	case "query_envelope_success":
+		_, _ = os.Stdout.WriteString(`{"command":"query","data":{"columns":["id"],"rows":[[1]],"row_count":1},"ok":true,"warnings":[]}`)
 		os.Exit(0)
 	case "nonzero_json_error":
 		_, _ = os.Stderr.WriteString(`{"code":"unauthorized","message":"bad token"}`)

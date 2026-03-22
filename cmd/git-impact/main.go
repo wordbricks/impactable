@@ -366,11 +366,8 @@ func sourceLabel(source *gitimpact.Source) string {
 	if source == nil {
 		return "missing"
 	}
-	if strings.TrimSpace(source.Key) != "" {
-		return source.Key
-	}
-	if strings.TrimSpace(source.Name) != "" {
-		return source.Name
+	if source.SourceKey() != "" {
+		return source.SourceKey()
 	}
 	return "unknown"
 }

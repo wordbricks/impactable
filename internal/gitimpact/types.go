@@ -81,9 +81,9 @@ type PRImpact struct {
 
 type AnalysisResult struct {
 	// Engine metadata
-	Output    string
-	Phase     Phase
-	Iteration int
+	Output        string
+	Phase         Phase
+	Iteration     int
 	GeneratedAt   time.Time
 	PRs           []PR
 	Deployments   []Deployment
@@ -102,13 +102,17 @@ type WhoAmIResult struct {
 type OrgResult struct {
 	Slug string `json:"slug"`
 	Name string `json:"name"`
+	Org  string `json:"org"`
 }
 
 type Source struct {
 	Key          string   `json:"key"`
 	Name         string   `json:"name"`
 	ProviderType string   `json:"provider_type"`
+	Provider     string   `json:"provider"`
 	Capabilities []string `json:"capabilities"`
+	Query        any      `json:"query"`
+	Status       string   `json:"status"`
 }
 
 func (s Source) SupportsQuery() bool {
@@ -117,7 +121,30 @@ func (s Source) SupportsQuery() bool {
 			return true
 		}
 	}
+	switch typed := s.Query.(type) {
+	case bool:
+		return typed
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "1", "true", "t", "yes", "y", "query", "supported":
+			return true
+		}
+	}
 	return false
+}
+
+func (s Source) SourceKey() string {
+	if trimmed := strings.TrimSpace(s.Key); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(s.Name)
+}
+
+func (s Source) ProviderLabel() string {
+	if trimmed := strings.TrimSpace(s.ProviderType); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(s.Provider)
 }
 
 type QueryResult struct {
