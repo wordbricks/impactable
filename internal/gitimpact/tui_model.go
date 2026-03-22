@@ -33,6 +33,7 @@ type AnalysisModel struct {
 	spinner      spinner.Model
 	done         bool
 	result       *AnalysisResult
+	showResults  bool
 	err          error
 }
 
@@ -101,11 +102,13 @@ func (m *AnalysisModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setAllDone()
 		m.done = true
 		m.result = typed.Result
+		m.showResults = true
 		m.err = nil
 		return m, tea.Quit
 	case RunExhaustedMsg:
 		m.isWaiting = false
 		m.waitMessage = ""
+		m.showResults = false
 		m.err = typed.Err
 		return m, tea.Quit
 	case spinner.TickMsg:
@@ -257,4 +260,20 @@ func maxInt(a int, b int) int {
 		return a
 	}
 	return b
+}
+
+// Result returns the final analysis result received through RunCompletedMsg.
+func (m *AnalysisModel) Result() *AnalysisResult {
+	if m == nil {
+		return nil
+	}
+	return m.result
+}
+
+// ShouldShowResults reports whether the model reached completion with a result payload.
+func (m *AnalysisModel) ShouldShowResults() bool {
+	if m == nil {
+		return false
+	}
+	return m.showResults && m.result != nil
 }

@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"impactable/internal/gitimpact"
 
@@ -159,10 +161,14 @@ func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, r
 		tea.WithoutSignalHandler(),
 	)
 
-	runDone := make(chan error, 1)
+	type progressProgramResult struct {
+		model tea.Model
+		err   error
+	}
+	runDone := make(chan progressProgramResult, 1)
 	go func() {
-		_, err := program.Run()
-		runDone <- err
+		finalModel, err := program.Run()
+		runDone <- progressProgramResult{model: finalModel, err: err}
 	}()
 
 	observer := gitimpact.NewTUIObserver(program)
@@ -173,14 +179,55 @@ func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, r
 	engine := gitimpact.NewDefaultEngine(runCtx.VelenClient, observer, waitHandler)
 
 	result, runErr := engine.Run(ctx, runCtx)
-	programErr := <-runDone
+	progressProgram := <-runDone
 	if runErr != nil {
 		return nil, runErr
 	}
-	if programErr != nil {
-		return nil, fmt.Errorf("run analysis progress TUI: %w", programErr)
+	if progressProgram.err != nil {
+		return nil, fmt.Errorf("run analysis progress TUI: %w", progressProgram.err)
 	}
+	if progressModel, ok := progressProgram.model.(*gitimpact.AnalysisModel); ok && progressModel.ShouldShowResults() {
+		result = progressModel.Result()
+	}
+	if result == nil {
+		return nil, fmt.Errorf("analysis completed without a result")
+	}
+
+	saveHandler := newResultsSaveHandler(runCtx.AnalysisCtx, result)
+	resultsModel := gitimpact.NewResultsModel(result, saveHandler)
+	resultsProgram := tea.NewProgram(
+		&resultsModel,
+		tea.WithInput(stdin),
+		tea.WithOutput(stdout),
+		tea.WithoutSignalHandler(),
+	)
+	if _, err := resultsProgram.Run(); err != nil {
+		return nil, fmt.Errorf("run analysis results TUI: %w", err)
+	}
+
 	return result, nil
+}
+
+func newResultsSaveHandler(analysisCtx *gitimpact.AnalysisContext, result *gitimpact.AnalysisResult) gitimpact.SaveReportFunc {
+	baseDir := "."
+	if analysisCtx != nil && strings.TrimSpace(analysisCtx.WorkingDirectory) != "" {
+		baseDir = analysisCtx.WorkingDirectory
+	}
+
+	return func(format string) (string, error) {
+		normalized := strings.ToLower(strings.TrimSpace(format))
+		stamp := time.Now().UTC().Format("20060102-150405")
+		switch normalized {
+		case "md":
+			path := filepath.Join(baseDir, fmt.Sprintf("git-impact-report-%s.md", stamp))
+			return path, gitimpact.SaveMarkdown(result, path)
+		case "html":
+			path := filepath.Join(baseDir, fmt.Sprintf("git-impact-report-%s.html", stamp))
+			return path, gitimpact.SaveHTML(result, path)
+		default:
+			return "", fmt.Errorf("unsupported report format %q", format)
+		}
+	}
 }
 
 func emitAnalyzeResult(output string, stdout io.Writer, payload map[string]any, result *gitimpact.AnalysisResult) error {

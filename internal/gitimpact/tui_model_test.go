@@ -97,6 +97,12 @@ func TestAnalysisModelUpdateRunCompleted(t *testing.T) {
 	if got.result != result {
 		t.Fatalf("result pointer mismatch: got %p want %p", got.result, result)
 	}
+	if !got.ShouldShowResults() {
+		t.Fatal("ShouldShowResults = false, want true")
+	}
+	if got.Result() != result {
+		t.Fatalf("Result() pointer mismatch: got %p want %p", got.Result(), result)
+	}
 	for _, phase := range got.phases {
 		if phase.Status != phaseStatusDone {
 			t.Fatalf("phase %q status = %q, want %q", phase.Phase, phase.Status, phaseStatusDone)
@@ -118,6 +124,9 @@ func TestAnalysisModelUpdateRunExhausted(t *testing.T) {
 	got := updated.(*AnalysisModel)
 	if !errors.Is(got.err, expectedErr) {
 		t.Fatalf("err = %v, want %v", got.err, expectedErr)
+	}
+	if got.ShouldShowResults() {
+		t.Fatal("ShouldShowResults = true, want false")
 	}
 }
 
