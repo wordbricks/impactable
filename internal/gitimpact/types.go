@@ -40,6 +40,7 @@ type AnalysisContext struct {
 	Since            *time.Time
 	PRNumber         int
 	Feature          string
+	LastWaitResponse string
 }
 
 type PR struct {
@@ -79,6 +80,10 @@ type PRImpact struct {
 }
 
 type AnalysisResult struct {
+	// Engine metadata
+	Output    string
+	Phase     Phase
+	Iteration int
 	GeneratedAt   time.Time
 	PRs           []PR
 	Deployments   []Deployment
@@ -152,3 +157,7 @@ type AmbiguousDeployment struct {
 	Options  []string
 	Reason   string
 }
+
+// EngineRunMeta holds engine-level metadata about a run (used by tests and engine internals).
+// These fields are populated by the engine and not part of the analysis content.
+// We embed these directly in AnalysisResult for convenience.

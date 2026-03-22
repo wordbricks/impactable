@@ -43,38 +43,6 @@ type PhaseHandler interface {
 	Handle(ctx context.Context, runCtx *RunContext) (*TurnResult, error)
 }
 
-// Config holds analysis configuration.
-type Config struct{}
-
-// AnalysisContext holds request context for one run.
-type AnalysisContext struct {
-	LastWaitResponse string
-}
-
-// VelenClient encapsulates Velen interactions.
-type VelenClient struct{}
-
-// PR is a pull request record.
-type PR struct{}
-
-// Release is a release record.
-type Release struct{}
-
-// Deployment is an inferred deployment record.
-type Deployment struct{}
-
-// FeatureGroup is a grouped feature result.
-type FeatureGroup struct{}
-
-// AmbiguousDeployment captures unresolved deployment mappings.
-type AmbiguousDeployment struct{}
-
-// PRImpact stores scored impact per PR.
-type PRImpact struct{}
-
-// ContributorStats stores contributor rollups.
-type ContributorStats struct{}
-
 // RunContext is mutable state shared across phase turns.
 type RunContext struct {
 	Config        *Config
@@ -106,16 +74,6 @@ type LinkedData struct {
 type ScoredData struct {
 	PRImpacts        []PRImpact
 	ContributorStats []ContributorStats
-}
-
-// AnalysisResult is the terminal run payload.
-type AnalysisResult struct {
-	Output        string
-	Phase         Phase
-	Iteration     int
-	CollectedData *CollectedData
-	LinkedData    *LinkedData
-	ScoredData    *ScoredData
 }
 
 // Engine executes ordered git-impact phases using phased-delivery directives.
@@ -252,14 +210,19 @@ func resolveStartPhase(start Phase) (int, error) {
 }
 
 func newAnalysisResult(runCtx *RunContext, output string) *AnalysisResult {
-	return &AnalysisResult{
-		Output:        output,
-		Phase:         runCtx.Phase,
-		Iteration:     runCtx.Iteration,
-		CollectedData: runCtx.CollectedData,
-		LinkedData:    runCtx.LinkedData,
-		ScoredData:    runCtx.ScoredData,
+	result := &AnalysisResult{Output: output, Phase: runCtx.Phase, Iteration: runCtx.Iteration}
+	if runCtx.CollectedData != nil {
+		result.PRs = runCtx.CollectedData.PRs
 	}
+	if runCtx.LinkedData != nil {
+		result.Deployments = runCtx.LinkedData.Deployments
+		result.FeatureGroups = runCtx.LinkedData.FeatureGroups
+	}
+	if runCtx.ScoredData != nil {
+		result.PRImpacts = runCtx.ScoredData.PRImpacts
+		result.Contributors = runCtx.ScoredData.ContributorStats
+	}
+	return result
 }
 
 func (e *Engine) notifyTurnStarted(phase Phase, iteration int) {

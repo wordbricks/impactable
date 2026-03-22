@@ -78,12 +78,12 @@ func TestTUIObserverSendsBubbleTeaMessages(t *testing.T) {
 	result := &AnalysisResult{}
 	exhaustedErr := &testErr{msg: "max iterations reached"}
 
-	observer.TurnStarted(PhaseCollect, 2)
-	observer.PhaseAdvanced(PhaseCollect, PhaseLink)
-	observer.WaitEntered("Need deployment mapping confirmation")
-	observer.WaitResolved("Use release tags")
-	observer.RunCompleted(result)
-	observer.RunExhausted(exhaustedErr)
+	observer.OnTurnStarted(PhaseCollect, 2)
+	observer.OnPhaseAdvanced(PhaseCollect, PhaseLink)
+	observer.OnWaitEntered("Need deployment mapping confirmation")
+	observer.OnWaitResolved("Use release tags")
+	observer.OnRunCompleted(result)
+	observer.OnRunExhausted(exhaustedErr)
 
 	var run runResult
 	select {

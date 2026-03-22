@@ -46,27 +46,27 @@ func NewTUIObserver(program *tea.Program) *TUIObserver {
 	return &TUIObserver{program: program}
 }
 
-func (o *TUIObserver) TurnStarted(phase Phase, iteration int) {
+func (o *TUIObserver) OnTurnStarted(phase Phase, iteration int) {
 	o.send(TurnStartedMsg{Phase: phase, Iteration: iteration})
 }
 
-func (o *TUIObserver) PhaseAdvanced(from, to Phase) {
+func (o *TUIObserver) OnPhaseAdvanced(from, to Phase) {
 	o.send(PhaseAdvancedMsg{From: from, To: to})
 }
 
-func (o *TUIObserver) WaitEntered(message string) {
+func (o *TUIObserver) OnWaitEntered(message string) {
 	o.send(WaitEnteredMsg{Message: message})
 }
 
-func (o *TUIObserver) WaitResolved(response string) {
+func (o *TUIObserver) OnWaitResolved(response string) {
 	o.send(WaitResolvedMsg{Response: response})
 }
 
-func (o *TUIObserver) RunCompleted(result *AnalysisResult) {
+func (o *TUIObserver) OnRunCompleted(result *AnalysisResult) {
 	o.send(RunCompletedMsg{Result: result})
 }
 
-func (o *TUIObserver) RunExhausted(err error) {
+func (o *TUIObserver) OnRunExhausted(err error) {
 	o.send(RunExhaustedMsg{Err: err})
 }
 
