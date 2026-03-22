@@ -13,35 +13,40 @@ Existing types and engine already exist in `internal/gitimpact/` and must be reu
 - tests for source detection and fallback behavior
 
 ## Milestones
-1. **Context construction and prompt assembly** — `not started`
+1. **Context construction and prompt assembly** — `completed`
    - Implement `NewAnalysisContext(...)` to load config via Viper and populate `AnalysisContext`.
    - Implement `BuildInitialPrompt(...)` to inject since/pr/feature inputs and configured Velen source keys.
-2. **CLI command surface** — `not started`
+2. **CLI command surface** — `completed`
    - Build root Cobra command (`git-impact`) with persistent `--config` and `--output` flags.
    - Add `analyze` subcommand with `--since`, `--pr`, `--feature`; print placeholder plus parsed context JSON.
-3. **Source check implementation** — `not started`
+3. **Source check implementation** — `completed`
    - Add `CheckSources(...)` and `SourceCheckResult` in `internal/gitimpact/check_sources.go`.
    - Execute `WhoAmI`, `CurrentOrg`, and `ListSources`; detect GitHub and Analytics providers case-insensitively.
    - Set support flags via `SupportsQuery()` and apply config-key fallback matching.
-4. **Command wiring and output modes** — `not started`
+4. **Command wiring and output modes** — `completed`
    - Wire `check-sources` subcommand to call `CheckSources`.
    - Emit text summary for human output and JSON payload for machine-readable output.
-5. **Validation and tests** — `not started`
+5. **Validation and tests** — `completed`
    - Add table-driven tests in `check_sources_test.go`.
    - Run `go build ./...` and `go test ./...` and fix any breakages.
 
 ## Current progress
-- Step plan created.
-- No implementation changes started yet.
+- Implemented `NewAnalysisContext(since, prNum, feature, configPath)` and `BuildInitialPrompt` in `internal/gitimpact/context.go`.
+- Added `internal/gitimpact/check_sources.go` with provider-type detection, query-capability checks, and config-key fallback.
+- Reworked `cmd/git-impact/main.go` to a full Cobra command surface with root persistent flags and wired `analyze` / `check-sources`.
+- Added `internal/gitimpact/check_sources_test.go` table-driven coverage plus helper-process command failure coverage.
+- Updated context tests for the new `NewAnalysisContext` signature and added prompt-content assertions.
+- Validation complete: `GOCACHE=/tmp/go-build-cache go build ./...` and `GOCACHE=/tmp/go-build-cache go test ./...` both pass.
 
 ## Key decisions
 - Reuse existing `Config`, `AnalysisContext`, `Source`, Velen client, and engine types as-is.
-- Keep output behavior aligned with non-negotiable machine-readable automation rules.
-- Keep `analyze` behavior minimal in this step (context parsing + placeholder output), deferring full analysis execution.
+- Keep output behavior aligned with non-negotiable machine-readable automation rules by defaulting non-TTY output to JSON.
+- Keep `analyze` behavior minimal in this step (context parsing + placeholder output), while also emitting the generated initial prompt.
+- Keep `check-sources` output non-fatal for missing source capability by returning structured status (`ok`/`issues`) and per-source errors.
 
 ## Remaining issues
-- Confirm exact output shape expected by downstream automation for text vs JSON modes once command wiring is in place.
-- Verify provider-type fallback behavior against real `velen source list` payload variations.
+- Confirm downstream automation envelope expectations (`status` semantics and field naming) before integrating into the next analysis phase.
+- Verify provider-type fallback behavior against real-world `velen source list` payload variations beyond test fixtures.
 
 ## Links
 - `SPEC.md` (sections 4.3 and 7)

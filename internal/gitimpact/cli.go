@@ -28,8 +28,11 @@ func Run(args []string, cwd string, stdin io.Reader, stdout io.Writer, stderr io
 
 // NewRootCommand builds the Cobra command tree for git-impact.
 func NewRootCommand(cwd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *cobra.Command {
-	var analyzeArgs CLIArgs
-	var checkSourcesConfigPath string
+	_ = cwd
+	var configPath string
+	var analyzeSince string
+	var analyzePR int
+	var analyzeFeature string
 
 	root := &cobra.Command{
 		Use:           "git-impact",
@@ -45,36 +48,32 @@ func NewRootCommand(cwd string, stdin io.Reader, stdout io.Writer, stderr io.Wri
 		Use:   "analyze",
 		Short: "Run impact analysis",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ctx, err := NewAnalysisContext(cwd, analyzeArgs)
+			ctx, err := NewAnalysisContext(analyzeSince, analyzePR, analyzeFeature, configPath)
 			if err != nil {
 				return err
 			}
-			if _, err := LoadConfig(ctx.ConfigPath); err != nil {
-				return err
-			}
+			_ = ctx
 			return ErrAnalyzeNotImplemented
 		},
 	}
-	analyzeCmd.Flags().StringVar(&analyzeArgs.ConfigPath, "config", DefaultConfigFile, "Path to impact analyzer config file")
-	analyzeCmd.Flags().StringVar(&analyzeArgs.Since, "since", "", "Analyze changes since YYYY-MM-DD")
-	analyzeCmd.Flags().IntVar(&analyzeArgs.PR, "pr", 0, "Analyze a specific PR number")
-	analyzeCmd.Flags().StringVar(&analyzeArgs.Feature, "feature", "", "Analyze a specific feature group")
+	analyzeCmd.Flags().StringVar(&analyzeSince, "since", "", "Analyze changes since YYYY-MM-DD")
+	analyzeCmd.Flags().IntVar(&analyzePR, "pr", 0, "Analyze a specific PR number")
+	analyzeCmd.Flags().StringVar(&analyzeFeature, "feature", "", "Analyze a specific feature group")
 
 	checkSourcesCmd := &cobra.Command{
 		Use:   "check-sources",
 		Short: "Validate configured Velen sources",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ctx, err := NewAnalysisContext(cwd, CLIArgs{ConfigPath: checkSourcesConfigPath})
+			ctx, err := NewAnalysisContext("", 0, "", configPath)
 			if err != nil {
 				return err
 			}
-			if _, err := LoadConfig(ctx.ConfigPath); err != nil {
-				return err
-			}
+			_ = ctx
 			return ErrCheckSourcesNotImplemented
 		},
 	}
-	checkSourcesCmd.Flags().StringVar(&checkSourcesConfigPath, "config", DefaultConfigFile, "Path to impact analyzer config file")
+
+	root.PersistentFlags().StringVar(&configPath, "config", DefaultConfigFile, "Path to impact analyzer config file")
 
 	root.AddCommand(analyzeCmd)
 	root.AddCommand(checkSourcesCmd)
