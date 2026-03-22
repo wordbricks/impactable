@@ -16,16 +16,16 @@ Implement the Observer-to-TUI bridge for git-impact so WTL lifecycle events are 
 | M2 | Define Observer->Msg bridge types and adapter | completed | `internal/gitimpact/tui_bridge.go` defines all required `tea.Msg` structs and a `TUIObserver` implementing the git-impact `Observer` interface with `program.Send(...)` dispatch. |
 | M3 | Add minimal analysis progress model | completed | `internal/gitimpact/tui_model.go` defines `AnalysisModel`, `PhaseStatus`, `Init`, `Update`, and `View` handling all bridge message types with simple text rendering. |
 | M4 | Add bridge message dispatch tests | completed | `internal/gitimpact/tui_bridge_test.go` verifies each Observer callback emits the expected Bubble Tea message payload. |
-| M5 | Verify build and test health | not started | `go build ./...` and `go test ./...` pass after Step 4 changes. |
+| M5 | Verify build and test health | completed | `go build ./...` and `go test ./...` pass after Step 4 changes. |
 
 ## Current progress
-- Overall status: in progress (`M1` + `M2` + `M3` + `M4` complete, `M5` next).
+- Overall status: complete (`M1` through `M5` complete).
 - Added Bubble Tea ecosystem dependencies via `go get`: `github.com/charmbracelet/bubbletea v1.3.10`, `github.com/charmbracelet/bubbles v1.0.0`, and `github.com/charmbracelet/lipgloss v1.1.0`.
 - Added `internal/gitimpact/tui_bridge.go` with six Bubble Tea message structs and `TUIObserver` forwarding each Observer callback with `program.Send(...)`.
 - Introduced minimal `internal/gitimpact/engine.go` and `internal/gitimpact/observer.go` scaffolding required for bridge compilation because prior-step files were not present in this worktree.
 - Added `internal/gitimpact/tui_model.go` implementing `AnalysisModel` (`Init`, `Update`, `View`) and `PhaseStatus`, with event-driven state transitions for all Observer bridge message types.
 - Added `internal/gitimpact/tui_bridge_test.go` with a Bubble Tea program-backed observer dispatch test validating type and payload for all six bridge messages.
-- Confirmed tree health after `M4` changes by running `go build ./...` and `go test ./...` successfully.
+- Re-ran dependency resolution and full validation for final milestone: `go get` (Bubble Tea deps), `go build ./...`, and `go test ./...` all succeeded.
 
 ## Key decisions
 - Keep this step focused on the Observer-to-TUI bridge and minimal model state transitions; defer richer TUI visuals/interactions to Step 9 as scoped.
@@ -37,7 +37,7 @@ Implement the Observer-to-TUI bridge for git-impact so WTL lifecycle events are 
 - Use an in-process Bubble Tea `Program` test harness (with renderer/input disabled) so tests verify real `program.Send(...)` integration instead of mocked dispatch.
 
 ## Remaining issues
-- Final step-level verification milestone (`M5`) remains pending.
+- None for Step 4 scope.
 
 ## Links
 - Product spec: `SPEC.md` (sections 3, 3.1)
