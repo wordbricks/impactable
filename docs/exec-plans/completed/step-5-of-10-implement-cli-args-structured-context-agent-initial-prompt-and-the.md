@@ -22,7 +22,7 @@ Existing types and engine already exist in `internal/gitimpact/` and must be reu
 3. **Source check implementation** — `completed`
    - Add `CheckSources(...)` and `SourceCheckResult` in `internal/gitimpact/check_sources.go`.
    - Execute `WhoAmI`, `CurrentOrg`, and `ListSources`; detect GitHub and Analytics providers case-insensitively.
-   - Set support flags via `SupportsQuery()` and apply config-key fallback matching.
+   - Set source readiness flags after provider discovery and apply config-key fallback matching.
 4. **Command wiring and output modes** — `completed`
    - Wire `check-sources` subcommand to call `CheckSources`.
    - Emit text summary for human output and JSON payload for machine-readable output.

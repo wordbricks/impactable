@@ -95,7 +95,7 @@ Observer lifecycle events are converted to Bubble Tea `Msg` values and drive rea
 **Source Check (pre-Turn 1)**
 - Run automatically at the start of every `analyze` invocation
 - Agent runs `velen auth whoami`, `velen org current`, `velen source list`
-- Verifies GitHub and Analytics sources exist and support `QUERY`
+- Verifies GitHub and Analytics sources exist
 - If a required source is missing, issue `wait` and ask the user to confirm before proceeding
 - Also available as standalone `git-impact check-sources` command
 
@@ -160,7 +160,7 @@ velen query --source <source_key> --sql "<agent-generated SQL>"
 At the start of every `analyze` run, the Agent:
 1. Runs `velen source list` to find available sources
 2. Identifies GitHub and Analytics sources by provider type
-3. Confirms each source supports `QUERY` via `velen source show`
+3. Confirms each required provider has a matching source
 4. If a required source type is missing, issues `wait` and asks the user
 
 ---

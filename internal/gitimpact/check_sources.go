@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// SourceCheckResult summarizes source connectivity status for required providers.
+// SourceCheckResult summarizes source discovery status for required providers.
 type SourceCheckResult struct {
 	GitHubSource    *Source  `json:"github_source,omitempty"`
 	AnalyticsSource *Source  `json:"analytics_source,omitempty"`
@@ -88,10 +88,7 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 		if cfg != nil {
 			cfg.Velen.Sources.GitHub = result.GitHubSource.SourceKey()
 		}
-		result.GitHubOK = result.GitHubSource.SupportsQuery()
-		if !result.GitHubOK {
-			result.Errors = append(result.Errors, fmt.Sprintf("github source %q does not support QUERY", result.GitHubSource.SourceKey()))
-		}
+		result.GitHubOK = true
 	}
 
 	if result.AnalyticsSource == nil {
@@ -100,10 +97,7 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 		if cfg != nil {
 			cfg.Velen.Sources.Analytics = result.AnalyticsSource.SourceKey()
 		}
-		result.AnalyticsOK = result.AnalyticsSource.SupportsQuery()
-		if !result.AnalyticsOK {
-			result.Errors = append(result.Errors, fmt.Sprintf("analytics source %q does not support QUERY", result.AnalyticsSource.SourceKey()))
-		}
+		result.AnalyticsOK = true
 	}
 
 	return result, nil

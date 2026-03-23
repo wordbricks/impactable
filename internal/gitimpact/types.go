@@ -115,24 +115,6 @@ type Source struct {
 	Status       string   `json:"status"`
 }
 
-func (s Source) SupportsQuery() bool {
-	for _, capability := range s.Capabilities {
-		if strings.EqualFold(strings.TrimSpace(capability), "QUERY") {
-			return true
-		}
-	}
-	switch typed := s.Query.(type) {
-	case bool:
-		return typed
-	case string:
-		switch strings.ToLower(strings.TrimSpace(typed)) {
-		case "1", "true", "t", "yes", "y", "query", "supported":
-			return true
-		}
-	}
-	return false
-}
-
 func (s Source) SourceKey() string {
 	if trimmed := strings.TrimSpace(s.Key); trimmed != "" {
 		return trimmed

@@ -104,7 +104,7 @@ Configured Velen context:
 
 Required startup flow:
 1) Run source checks first (whoami, current org, source list).
-2) Confirm GitHub and Analytics sources are available and QUERY-capable.
+2) Confirm GitHub and Analytics sources are available.
 3) If required inputs are missing or ambiguous, pause and ask the user before continuing.
 `, strings.TrimSpace(ctx.WorkingDirectory), strings.TrimSpace(ctx.ConfigPath), since, prScope, featureScope, org, githubSource, analyticsSource))
 }

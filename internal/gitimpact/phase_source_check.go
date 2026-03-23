@@ -58,10 +58,6 @@ func sourceCheckWaitMessage(result *SourceCheckResult) string {
 		return "Required sources could not be verified. Continue anyway? (y/n)"
 	}
 
-	if len(result.Errors) == 0 {
-		return "Required sources are not QUERY-capable. Continue anyway? (y/n)"
-	}
-
 	return fmt.Sprintf(
 		"Required Velen sources are not ready: %s. Continue anyway? (y/n)",
 		strings.Join(result.Errors, "; "),

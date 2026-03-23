@@ -23,28 +23,6 @@ func TestNewVelenClientDefaultTimeout(t *testing.T) {
 	}
 }
 
-func TestSourceSupportsQuery(t *testing.T) {
-	source := Source{Capabilities: []string{"SYNC", "query"}}
-	if !source.SupportsQuery() {
-		t.Fatalf("expected SupportsQuery to be true")
-	}
-
-	source = Source{Capabilities: []string{"SYNC"}}
-	if source.SupportsQuery() {
-		t.Fatalf("expected SupportsQuery to be false")
-	}
-
-	source = Source{Query: "yes"}
-	if !source.SupportsQuery() {
-		t.Fatalf("expected SupportsQuery to be true for query=yes")
-	}
-
-	source = Source{Query: true}
-	if !source.SupportsQuery() {
-		t.Fatalf("expected SupportsQuery to be true for query=true")
-	}
-}
-
 func TestWhoAmISuccess(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	client := newHelperClient(t, "whoami_success", time.Second, argsFile)
@@ -86,7 +64,7 @@ func TestListSourcesSuccess(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("expected 1 source, got %d", len(result))
 	}
-	if result[0].Key != "github-main" || !result[0].SupportsQuery() {
+	if result[0].Key != "github-main" || result[0].ProviderType != "GITHUB" {
 		t.Fatalf("unexpected source result: %+v", result[0])
 	}
 
@@ -148,10 +126,10 @@ func TestListSourcesEnvelopeSuccess(t *testing.T) {
 	if len(result) != 2 {
 		t.Fatalf("expected 2 sources, got %d", len(result))
 	}
-	if result[0].SourceKey() != "getgpt-repo" || result[0].ProviderLabel() != "github" || !result[0].SupportsQuery() {
+	if result[0].SourceKey() != "getgpt-repo" || result[0].ProviderLabel() != "github" {
 		t.Fatalf("unexpected first source result: %+v", result[0])
 	}
-	if result[1].SourceKey() != "getgpt-ga" || result[1].ProviderLabel() != "ga" || !result[1].SupportsQuery() {
+	if result[1].SourceKey() != "getgpt-ga" || result[1].ProviderLabel() != "ga" {
 		t.Fatalf("unexpected second source result: %+v", result[1])
 	}
 }
