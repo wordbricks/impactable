@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,48 @@ func TestRun_MissingDefaultConfigReturnsActionableError(t *testing.T) {
 	}
 }
 
+func TestNewPromptWaitHandler_ReleasesAndRestoresTerminal(t *testing.T) {
+	var stdout bytes.Buffer
+	terminal := &stubTerminalController{}
+	handler := newPromptWaitHandler(strings.NewReader("y\n"), &stdout, terminal)
+
+	response, err := handler("Continue anyway? (y/n)")
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if response != "y" {
+		t.Fatalf("response = %q, want %q", response, "y")
+	}
+	if terminal.releaseCalls != 1 {
+		t.Fatalf("release calls = %d, want 1", terminal.releaseCalls)
+	}
+	if terminal.restoreCalls != 1 {
+		t.Fatalf("restore calls = %d, want 1", terminal.restoreCalls)
+	}
+	if !strings.Contains(stdout.String(), "Continue anyway? (y/n)") {
+		t.Fatalf("expected prompt message in output, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "> ") {
+		t.Fatalf("expected prompt marker in output, got %q", stdout.String())
+	}
+}
+
+func TestNewPromptWaitHandler_ReturnsReleaseError(t *testing.T) {
+	terminal := &stubTerminalController{releaseErr: errors.New("boom")}
+	handler := newPromptWaitHandler(strings.NewReader("y\n"), &bytes.Buffer{}, terminal)
+
+	_, err := handler("Continue anyway? (y/n)")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "release terminal for prompt") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if terminal.restoreCalls != 0 {
+		t.Fatalf("restore calls = %d, want 0", terminal.restoreCalls)
+	}
+}
+
 func writeMainTestConfig(t *testing.T, dir string) {
 	t.Helper()
 
@@ -77,4 +120,21 @@ func withWorkingDirectory(t *testing.T, dir string, fn func() int) int {
 	}()
 
 	return fn()
+}
+
+type stubTerminalController struct {
+	releaseCalls int
+	restoreCalls int
+	releaseErr   error
+	restoreErr   error
+}
+
+func (s *stubTerminalController) ReleaseTerminal() error {
+	s.releaseCalls++
+	return s.releaseErr
+}
+
+func (s *stubTerminalController) RestoreTerminal() error {
+	s.restoreCalls++
+	return s.restoreErr
 }

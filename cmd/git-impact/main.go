@@ -19,6 +19,11 @@ import (
 	"github.com/spf13/pflag"
 )
 
+type terminalController interface {
+	ReleaseTerminal() error
+	RestoreTerminal() error
+}
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
@@ -100,7 +105,7 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 
 			waitHandler := newNonInteractiveWaitHandler()
 			if isTerminalReader(stdin) {
-				waitHandler = newPromptWaitHandler(stdin, stdout)
+				waitHandler = newPromptWaitHandler(stdin, stdout, nil)
 			}
 			engine := gitimpact.NewDefaultEngine(runCtx.VelenClient, nil, waitHandler)
 			result, err := engine.Run(cmd.Context(), runCtx)
@@ -183,7 +188,7 @@ func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, r
 	observer := gitimpact.NewTUIObserver(program)
 	waitHandler := newNonInteractiveWaitHandler()
 	if isTerminalReader(stdin) {
-		waitHandler = newPromptWaitHandler(stdin, stdout)
+		waitHandler = newPromptWaitHandler(stdin, stdout, program)
 	}
 	engine := gitimpact.NewDefaultEngine(runCtx.VelenClient, observer, waitHandler)
 
@@ -339,9 +344,18 @@ func isTerminalReader(reader io.Reader) bool {
 	return info.Mode()&os.ModeCharDevice != 0
 }
 
-func newPromptWaitHandler(stdin io.Reader, stdout io.Writer) gitimpact.WaitHandler {
+func newPromptWaitHandler(stdin io.Reader, stdout io.Writer, terminal terminalController) gitimpact.WaitHandler {
 	reader := bufio.NewReader(stdin)
 	return func(message string) (string, error) {
+		if terminal != nil {
+			if err := terminal.ReleaseTerminal(); err != nil {
+				return "", fmt.Errorf("release terminal for prompt: %w", err)
+			}
+			defer func() {
+				_ = terminal.RestoreTerminal()
+			}()
+		}
+
 		prompt := strings.TrimSpace(message)
 		if prompt != "" {
 			_, _ = fmt.Fprintln(stdout, prompt)
