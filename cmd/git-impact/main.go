@@ -168,12 +168,16 @@ func normalizeAnalyzeFlagName(_ *pflag.FlagSet, name string) pflag.NormalizedNam
 func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, runCtx *gitimpact.RunContext) (*gitimpact.AnalysisResult, error) {
 	phases := gitimpact.DefaultAnalysisPhases()
 	model := gitimpact.NewAnalysisModel(phases)
-	program := tea.NewProgram(
-		&model,
-		tea.WithInput(nil),
+	programOptions := []tea.ProgramOption{
 		tea.WithOutput(stdout),
 		tea.WithoutSignalHandler(),
-	)
+	}
+	if isTerminalReader(stdin) {
+		programOptions = append(programOptions, tea.WithInput(stdin))
+	} else {
+		programOptions = append(programOptions, tea.WithInput(nil))
+	}
+	program := tea.NewProgram(&model, programOptions...)
 
 	type progressProgramResult struct {
 		model tea.Model
