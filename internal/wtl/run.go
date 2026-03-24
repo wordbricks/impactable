@@ -67,7 +67,6 @@ func Run(args []string, cwd string, stdin io.Reader, stdout io.Writer, stderr io
 		maxIter:   req.MaxIter,
 		maxRetry:  req.MaxRetry,
 		runID:     runID,
-		phase:     simpleLoopPolicy{}.InitialPhase(),
 	}
 
 	summary, runErr := loop.run(ctx, cfg, prompt)

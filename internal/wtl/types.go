@@ -27,6 +27,13 @@ const (
 	directiveUnsupported directive = "unsupported"
 )
 
+type threadMode string
+
+const (
+	threadModeReuse threadMode = "reuse"
+	threadModeNew   threadMode = "new"
+)
+
 type runStatus string
 
 const (
@@ -41,10 +48,13 @@ type eventType string
 const (
 	eventRunStarted     eventType = "run.started"
 	eventPhaseChanged   eventType = "phase.changed"
+	eventThreadStarted  eventType = "thread.started"
+	eventThreadReused   eventType = "thread.reused"
 	eventTurnStarted    eventType = "turn.started"
 	eventTurnDelta      eventType = "turn.delta"
 	eventTurnFinished   eventType = "turn.finished"
 	eventWaitEntered    eventType = "run.wait_entered"
+	eventWaitResolved   eventType = "run.wait_resolved"
 	eventRunCompleted   eventType = "run.completed"
 	eventRunExhausted   eventType = "run.exhausted"
 	eventRunInterrupted eventType = "run.interrupted"
@@ -74,9 +84,31 @@ type turnResult struct {
 }
 
 type turnOutcome struct {
+	TurnID   string
 	Response string
 	Err      error
 	Status   string
+}
+
+type executionPlan struct {
+	Phase      string            `json:"phase,omitempty"`
+	Prompt     string            `json:"prompt,omitempty"`
+	ThreadMode threadMode        `json:"thread_mode,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+type policyState struct {
+	Runnable   bool          `json:"runnable,omitempty"`
+	Waiting    bool          `json:"waiting,omitempty"`
+	Terminal   bool          `json:"terminal,omitempty"`
+	Directive  directive     `json:"directive,omitempty"`
+	WaitReason string        `json:"wait_reason,omitempty"`
+	Plan       executionPlan `json:"plan,omitempty"`
+}
+
+type policyDecision struct {
+	Directive directive
+	State     policyState
 }
 
 type runSummary struct {
@@ -99,6 +131,7 @@ type runEvent struct {
 	Event      eventType `json:"event"`
 	RunID      string    `json:"run_id,omitempty"`
 	ThreadID   string    `json:"thread_id,omitempty"`
+	TurnID     string    `json:"turn_id,omitempty"`
 	Phase      string    `json:"phase,omitempty"`
 	Iteration  int       `json:"iteration,omitempty"`
 	Status     runStatus `json:"status,omitempty"`

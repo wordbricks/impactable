@@ -36,6 +36,7 @@ type appServerRunner struct {
 	cfg           runConfig
 	cmd           *exec.Cmd
 	stdin         io.WriteCloser
+	initialized   bool
 	pending       map[int64]chan rpcEnvelope
 	pendingMu     sync.Mutex
 	nextID        int64
@@ -85,17 +86,20 @@ func newAppServerRunner(cfg runConfig) (turnRunner, error) {
 }
 
 func (r *appServerRunner) Start(ctx context.Context, cfg runConfig) (string, error) {
-	if _, err := r.request(ctx, "initialize", map[string]any{
-		"clientInfo": map[string]any{
-			"name":    "wtl",
-			"title":   "WhatTheLoop CLI",
-			"version": "0.1.0",
-		},
-	}); err != nil {
-		return "", err
-	}
-	if err := r.notify("initialized", map[string]any{}); err != nil {
-		return "", err
+	if !r.initialized {
+		if _, err := r.request(ctx, "initialize", map[string]any{
+			"clientInfo": map[string]any{
+				"name":    "wtl",
+				"title":   "WhatTheLoop CLI",
+				"version": "0.1.0",
+			},
+		}); err != nil {
+			return "", err
+		}
+		if err := r.notify("initialized", map[string]any{}); err != nil {
+			return "", err
+		}
+		r.initialized = true
 	}
 
 	result, err := r.request(ctx, "thread/start", threadStartParams(cfg))
