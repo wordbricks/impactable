@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 type scriptedAgentRunner struct {
@@ -59,7 +60,7 @@ func TestAgentPhaseHandlerRunsCollectTurnAndAppliesPayload(t *testing.T) {
 				"output":"collected 1 PR",
 				"collected_data":{
 					"PRs":[{"Number":142,"Title":"Payment Page","Author":"kim","Branch":"feature/payments"}],
-					"Tags":["v1.0.0|2026-02-15T00:00:00Z"],
+					"Tags":[{"Name":"v1.0.0","Sha":"abc123","CreatedAt":"2026-02-15T00:00:00Z"}],
 					"Releases":[{"Name":"v1.0.0","TagName":"v1.0.0","PublishedAt":"2026-02-15T00:00:00Z"}]
 				}
 			}`,
@@ -92,6 +93,9 @@ func TestAgentPhaseHandlerRunsCollectTurnAndAppliesPayload(t *testing.T) {
 	}
 	if got := runCtx.CollectedData.PRs[0].Number; got != 142 {
 		t.Fatalf("PR number = %d, want 142", got)
+	}
+	if got := runCtx.CollectedData.Tags; len(got) != 1 || got[0].Name != "v1.0.0" || got[0].Sha != "abc123" || !got[0].CreatedAt.Equal(time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("unexpected tags: %#v", got)
 	}
 	if runner.threadStarts != 1 {
 		t.Fatalf("thread starts = %d, want 1", runner.threadStarts)
@@ -126,6 +130,7 @@ func TestBuildAgentPhasePromptIncludesRuntimeContract(t *testing.T) {
 		"Return exactly one JSON object",
 		"\"Org\": \"jay\"",
 		"source show",
+		"\"Tags\": [{\"Name\": \"\"",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("prompt missing %q:\n%s", expected, prompt)
@@ -133,6 +138,48 @@ func TestBuildAgentPhasePromptIncludesRuntimeContract(t *testing.T) {
 	}
 	if strings.Contains(prompt, "non-queryable") {
 		t.Fatalf("source check prompt should not wait on non-queryable sources:\n%s", prompt)
+	}
+}
+
+func TestParseAgentPhasePayloadAcceptsLegacyStringTags(t *testing.T) {
+	t.Parallel()
+
+	payload, err := ParseAgentPhasePayload(`{
+		"directive":"advance_phase",
+		"collected_data":{
+			"Tags":["v1.2.3|2026-01-04T08:00:00Z"]
+		}
+	}`)
+	if err != nil {
+		t.Fatalf("parse payload: %v", err)
+	}
+	if payload.CollectedData == nil || len(payload.CollectedData.Tags) != 1 {
+		t.Fatalf("expected one tag, got %#v", payload.CollectedData)
+	}
+	tag := payload.CollectedData.Tags[0]
+	if tag.Name != "v1.2.3" || !tag.CreatedAt.Equal(time.Date(2026, 1, 4, 8, 0, 0, 0, time.UTC)) {
+		t.Fatalf("unexpected tag: %#v", tag)
+	}
+}
+
+func TestParseAgentPhasePayloadAcceptsTagObjectsWithoutCreatedAt(t *testing.T) {
+	t.Parallel()
+
+	payload, err := ParseAgentPhasePayload(`{
+		"directive":"advance_phase",
+		"collected_data":{
+			"Tags":[{"Name":"v0.91.1","Sha":"794b91c400023ef14e6642c343093caac818c528"}]
+		}
+	}`)
+	if err != nil {
+		t.Fatalf("parse payload: %v", err)
+	}
+	if payload.CollectedData == nil || len(payload.CollectedData.Tags) != 1 {
+		t.Fatalf("expected one tag, got %#v", payload.CollectedData)
+	}
+	tag := payload.CollectedData.Tags[0]
+	if tag.Name != "v0.91.1" || tag.Sha != "794b91c400023ef14e6642c343093caac818c528" || !tag.CreatedAt.IsZero() {
+		t.Fatalf("unexpected tag: %#v", tag)
 	}
 }
 

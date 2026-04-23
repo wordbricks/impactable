@@ -292,13 +292,18 @@ Schema:
   "directive": "advance_phase|wait|retry|continue|complete",
   "wait_message": "only when directive is wait",
   "output": "short human-readable phase summary",
-  "collected_data": {"PRs": [], "Tags": [], "Releases": []},
+  "collected_data": {
+    "PRs": [{"Number": 0, "Title": "", "Author": "", "MergedAt": "RFC3339 timestamp", "Branch": "", "Labels": [], "ChangedFile": []}],
+    "Tags": [{"Name": "", "Sha": "", "CreatedAt": "RFC3339 timestamp or empty"}],
+    "Releases": [{"Name": "", "TagName": "", "PublishedAt": "RFC3339 timestamp"}]
+  },
   "linked_data": {"Deployments": [], "FeatureGroups": [], "AmbiguousItems": []},
   "scored_data": {"PRImpacts": [], "ContributorStats": []},
   "analysis_result": {"Output": "", "PRs": [], "Deployments": [], "FeatureGroups": [], "Contributors": [], "PRImpacts": []},
   "error": ""
 }
-Only include data fields that are relevant to this phase.`, phase, string(state), phaseInstructions(phase))), nil
+Only include data fields that are relevant to this phase.
+When returning collected_data, use exactly the PRs, Tags, and Releases top-level keys shown above; put repository, scope, labels, and commit summaries in output text, not in collected_data.`, phase, string(state), phaseInstructions(phase))), nil
 }
 
 func phaseInstructions(phase Phase) string {
@@ -306,7 +311,7 @@ func phaseInstructions(phase Phase) string {
 	case PhaseSourceCheck:
 		return "Verify org and required GitHub/Analytics OneQuery sources. If a required source is missing, return directive wait with a specific question. Otherwise return advance_phase."
 	case PhaseCollect:
-		return "Collect GitHub PR, commit, branch, tag, release, label, and changed-file data for the requested scope. Return collected_data and advance_phase when enough data is present."
+		return "Collect GitHub PR, tag, and release data for the requested scope. Return collected_data using the exact typed schema: Tags must be objects with Name, optional Sha, and optional CreatedAt; never return Tags as strings or as arbitrary metadata objects. Return advance_phase when enough data is present."
 	case PhaseLink:
 		return "Infer deployments and feature groups from collected_data. If a deployment or feature mapping is ambiguous, return wait with the concrete mapping question. Otherwise return linked_data and advance_phase."
 	case PhaseScore:

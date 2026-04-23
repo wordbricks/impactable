@@ -2,6 +2,7 @@ package gitimpact
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -52,6 +53,139 @@ type PR struct {
 	Branch      string
 	Labels      []string
 	ChangedFile []string
+}
+
+// Tag represents a Git tag collected from GitHub.
+type Tag struct {
+	Name      string
+	Sha       string
+	CreatedAt time.Time
+}
+
+func (t Tag) MarshalJSON() ([]byte, error) {
+	payload := struct {
+		Name      string `json:"Name"`
+		Sha       string `json:"Sha,omitempty"`
+		CreatedAt string `json:"CreatedAt,omitempty"`
+	}{
+		Name: strings.TrimSpace(t.Name),
+		Sha:  strings.TrimSpace(t.Sha),
+	}
+	if !t.CreatedAt.IsZero() {
+		payload.CreatedAt = t.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	return json.Marshal(payload)
+}
+
+func (t *Tag) UnmarshalJSON(payload []byte) error {
+	var legacy string
+	if err := json.Unmarshal(payload, &legacy); err == nil {
+		parsed, ok := parseLegacyTag(legacy)
+		if !ok {
+			*t = Tag{Name: strings.TrimSpace(legacy)}
+			return nil
+		}
+		*t = parsed
+		return nil
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return err
+	}
+
+	name, err := rawStringField(raw, "Name", "name")
+	if err != nil {
+		return fmt.Errorf("tag Name: %w", err)
+	}
+	sha, err := rawStringField(raw, "Sha", "SHA", "sha")
+	if err != nil {
+		return fmt.Errorf("tag Sha: %w", err)
+	}
+	createdAt, err := rawTimeField(raw, "CreatedAt", "createdAt", "created_at")
+	if err != nil {
+		return fmt.Errorf("tag CreatedAt: %w", err)
+	}
+
+	*t = Tag{
+		Name:      strings.TrimSpace(name),
+		Sha:       strings.TrimSpace(sha),
+		CreatedAt: createdAt,
+	}
+	return nil
+}
+
+func parseLegacyTag(value string) (Tag, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return Tag{}, false
+	}
+
+	parts := strings.SplitN(trimmed, tagTimestampSeparator, 2)
+	if len(parts) != 2 {
+		return Tag{Name: trimmed}, false
+	}
+
+	name := strings.TrimSpace(parts[0])
+	if name == "" {
+		return Tag{}, false
+	}
+
+	createdAt, err := asTime(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return Tag{Name: name}, false
+	}
+	return Tag{Name: name, CreatedAt: createdAt.UTC()}, true
+}
+
+func rawStringField(raw map[string]json.RawMessage, names ...string) (string, error) {
+	value, ok := rawField(raw, names...)
+	if !ok {
+		return "", nil
+	}
+	if isJSONNull(value) {
+		return "", nil
+	}
+	var decoded string
+	if err := json.Unmarshal(value, &decoded); err == nil {
+		return decoded, nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(value, &number); err == nil {
+		return number.String(), nil
+	}
+	return "", fmt.Errorf("expected string")
+}
+
+func rawTimeField(raw map[string]json.RawMessage, names ...string) (time.Time, error) {
+	value, ok := rawField(raw, names...)
+	if !ok {
+		return time.Time{}, nil
+	}
+	if isJSONNull(value) {
+		return time.Time{}, nil
+	}
+	var decoded string
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return time.Time{}, fmt.Errorf("expected string")
+	}
+	if strings.TrimSpace(decoded) == "" {
+		return time.Time{}, nil
+	}
+	return asTime(decoded)
+}
+
+func rawField(raw map[string]json.RawMessage, names ...string) (json.RawMessage, bool) {
+	for _, name := range names {
+		if value, ok := raw[name]; ok {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func isJSONNull(value json.RawMessage) bool {
+	return strings.EqualFold(strings.TrimSpace(string(value)), "null")
 }
 
 type Deployment struct {

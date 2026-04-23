@@ -129,12 +129,12 @@ func parsePRRows(result *QueryResult) ([]PR, error) {
 	return prs, nil
 }
 
-func parseTagRows(result *QueryResult) ([]string, error) {
+func parseTagRows(result *QueryResult) ([]Tag, error) {
 	if result == nil {
 		return nil, fmt.Errorf("collect tags: query result is nil")
 	}
 
-	tags := make([]string, 0, len(result.Rows))
+	tags := make([]Tag, 0, len(result.Rows))
 	for idx, row := range result.Rows {
 		if len(row) < 2 {
 			return nil, fmt.Errorf("collect tags: row %d has %d columns, expected 2", idx, len(row))
@@ -143,20 +143,21 @@ func parseTagRows(result *QueryResult) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("collect tags: row %d invalid created_at: %w", idx, err)
 		}
-		tags = append(tags, formatTagWithTimestamp(asString(row[0]), createdAt))
+		tags = append(tags, newTag(asString(row[0]), createdAt))
 	}
 	return tags, nil
 }
 
-func formatTagWithTimestamp(name string, createdAt time.Time) string {
+func newTag(name string, createdAt time.Time) Tag {
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
-		return ""
+		return Tag{}
 	}
-	if createdAt.IsZero() {
-		return trimmedName
+	tag := Tag{Name: trimmedName}
+	if !createdAt.IsZero() {
+		tag.CreatedAt = createdAt.UTC()
 	}
-	return fmt.Sprintf("%s|%s", trimmedName, createdAt.UTC().Format(time.RFC3339))
+	return tag
 }
 
 func parseReleaseRows(result *QueryResult) ([]Release, error) {

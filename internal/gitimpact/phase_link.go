@@ -54,7 +54,7 @@ func (h *LinkHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResult
 	return &TurnResult{Directive: DirectiveAdvancePhase}, nil
 }
 
-func inferDeployment(pr PR, releases []Release, tags []string) (Deployment, bool) {
+func inferDeployment(pr PR, releases []Release, tags []Tag) (Deployment, bool) {
 	deployment := Deployment{
 		PRNumber:   pr.Number,
 		Marker:     fmt.Sprintf("pr-%d-merge", pr.Number),
@@ -224,16 +224,17 @@ func nearestReleaseAfter(mergedAt time.Time, releases []Release) (Release, bool)
 	return chosen, found
 }
 
-func nearestVersionTagAfter(mergedAt time.Time, tags []string) (string, time.Time, bool) {
+func nearestVersionTagAfter(mergedAt time.Time, tags []Tag) (string, time.Time, bool) {
 	var (
 		selectedName string
 		selectedAt   time.Time
 		found        bool
 	)
 
-	for _, rawTag := range tags {
-		tagName, createdAt, ok := parseTagWithTimestamp(rawTag)
-		if !ok || !isVersionTag(tagName) {
+	for _, tag := range tags {
+		tagName := strings.TrimSpace(tag.Name)
+		createdAt := tag.CreatedAt
+		if tagName == "" || createdAt.IsZero() || !isVersionTag(tagName) {
 			continue
 		}
 		if createdAt.Before(mergedAt) || createdAt.Sub(mergedAt) > linkInferenceWindow {
@@ -247,29 +248,6 @@ func nearestVersionTagAfter(mergedAt time.Time, tags []string) (string, time.Tim
 	}
 
 	return selectedName, selectedAt, found
-}
-
-func parseTagWithTimestamp(raw string) (string, time.Time, bool) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return "", time.Time{}, false
-	}
-
-	parts := strings.SplitN(trimmed, tagTimestampSeparator, 2)
-	if len(parts) != 2 {
-		return strings.TrimSpace(trimmed), time.Time{}, false
-	}
-
-	name := strings.TrimSpace(parts[0])
-	if name == "" {
-		return "", time.Time{}, false
-	}
-
-	createdAt, err := asTime(strings.TrimSpace(parts[1]))
-	if err != nil {
-		return "", time.Time{}, false
-	}
-	return name, createdAt, true
 }
 
 func releaseMarker(release Release) string {

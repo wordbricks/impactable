@@ -58,7 +58,7 @@ type RunContext struct {
 // CollectedData stores source collection outputs.
 type CollectedData struct {
 	PRs       []PR
-	Tags      []string
+	Tags      []Tag
 	Releases  []Release
 	RawOutput string
 }

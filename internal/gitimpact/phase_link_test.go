@@ -16,8 +16,8 @@ func TestInferDeployment_PrefersReleaseOverTag(t *testing.T) {
 
 	deployment, ok := inferDeployment(pr, []Release{
 		{TagName: "v2.0.1", PublishedAt: mergedAt.Add(4 * time.Hour)},
-	}, []string{
-		formatTagWithTimestamp("v2.0.0", mergedAt.Add(30*time.Minute)),
+	}, []Tag{
+		newTag("v2.0.0", mergedAt.Add(30*time.Minute)),
 	})
 	if !ok {
 		t.Fatal("expected deployment inference to succeed")
@@ -42,9 +42,9 @@ func TestInferDeployment_UsesVersionTagWhenReleaseUnavailable(t *testing.T) {
 	tagCreatedAt := mergedAt.Add(2 * time.Hour)
 	deployment, ok := inferDeployment(pr, []Release{
 		{TagName: "v2.1.0", PublishedAt: mergedAt.Add(72 * time.Hour)},
-	}, []string{
-		formatTagWithTimestamp("build-20260210", tagCreatedAt),
-		formatTagWithTimestamp("release-2.0.0", tagCreatedAt),
+	}, []Tag{
+		newTag("build-20260210", tagCreatedAt),
+		newTag("release-2.0.0", tagCreatedAt),
 	})
 	if !ok {
 		t.Fatal("expected deployment inference to succeed")
@@ -68,9 +68,9 @@ func TestInferDeployment_FallsBackToMergeTime(t *testing.T) {
 
 	deployment, ok := inferDeployment(pr, []Release{
 		{TagName: "v2.0.2", PublishedAt: mergedAt.Add(72 * time.Hour)},
-	}, []string{
-		formatTagWithTimestamp("v2.0.1", mergedAt.Add(72*time.Hour)),
-		"v2.0.0",
+	}, []Tag{
+		newTag("v2.0.1", mergedAt.Add(72*time.Hour)),
+		{Name: "v2.0.0"},
 	})
 	if !ok {
 		t.Fatal("expected fallback inference to be considered successful")
@@ -133,8 +133,8 @@ func TestLinkHandlerHandle_AdvancePhaseAndPopulateLinkedData(t *testing.T) {
 			Releases: []Release{
 				{TagName: "v3.0.0", PublishedAt: releaseAt},
 			},
-			Tags: []string{
-				formatTagWithTimestamp("release-3.1.0", tagAt),
+			Tags: []Tag{
+				newTag("release-3.1.0", tagAt),
 			},
 		},
 	}
