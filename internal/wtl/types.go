@@ -80,6 +80,7 @@ type runConfig struct {
 	ClientVersion  string
 	ApprovalPolicy string
 	Sandbox        string
+	NetworkAccess  bool
 	CommandEnv     string
 }
 

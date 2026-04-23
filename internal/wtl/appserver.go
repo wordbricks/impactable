@@ -42,6 +42,7 @@ type AppServerConfig struct {
 	ClientVersion  string
 	ApprovalPolicy string
 	Sandbox        string
+	NetworkAccess  bool
 	CommandEnv     string
 }
 
@@ -86,6 +87,7 @@ func NewAppServerClient(cfg AppServerConfig) (*AppServerClient, error) {
 		ClientVersion:  cfg.ClientVersion,
 		ApprovalPolicy: cfg.ApprovalPolicy,
 		Sandbox:        cfg.Sandbox,
+		NetworkAccess:  cfg.NetworkAccess,
 		CommandEnv:     cfg.CommandEnv,
 	}
 	runner, err := newAppServerRunner(runCfg)
@@ -331,13 +333,7 @@ func (r *appServerRunner) Close() error {
 }
 
 func (r *appServerRunner) startTurn(ctx context.Context, threadID string, prompt string) (string, error) {
-	result, err := r.request(ctx, "turn/start", map[string]any{
-		"threadId": threadID,
-		"input": []map[string]any{{
-			"type": "text",
-			"text": prompt,
-		}},
-	})
+	result, err := r.request(ctx, "turn/start", turnStartParams(threadID, prompt, r.cfg))
 	if err != nil {
 		return "", err
 	}
@@ -351,6 +347,36 @@ func (r *appServerRunner) startTurn(ctx context.Context, threadID string, prompt
 		return "", fmt.Errorf("turn/start returned no turn id")
 	}
 	return turnID, nil
+}
+
+func turnStartParams(threadID string, prompt string, cfg runConfig) map[string]any {
+	params := map[string]any{
+		"threadId": threadID,
+		"input": []map[string]any{{
+			"type": "text",
+			"text": prompt,
+		}},
+	}
+	if cfg.NetworkAccess {
+		params["sandboxPolicy"] = map[string]any{
+			"type":          sandboxPolicyType(cfg.Sandbox),
+			"networkAccess": true,
+		}
+	}
+	return params
+}
+
+func sandboxPolicyType(sandbox string) string {
+	switch strings.TrimSpace(sandbox) {
+	case "workspace-write", "workspaceWrite", "":
+		return "workspaceWrite"
+	case "read-only", "readOnly":
+		return "readOnly"
+	case "danger-full-access", "dangerFullAccess":
+		return "dangerFullAccess"
+	default:
+		return strings.TrimSpace(sandbox)
+	}
 }
 
 func (r *appServerRunner) interruptTurn(ctx context.Context, threadID string, turnID string) error {

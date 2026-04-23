@@ -64,6 +64,7 @@ func NewCodexAgentRuntime(cfg CodexAgentConfig) (*CodexAgentRuntime, error) {
 		ClientVersion:  agentClientVersion,
 		ApprovalPolicy: agentApprovalPolicy,
 		Sandbox:        agentSandbox,
+		NetworkAccess:  true,
 		CommandEnv:     agentCommandEnv,
 	})
 	if err != nil {

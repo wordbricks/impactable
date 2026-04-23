@@ -74,6 +74,7 @@
   - Overrides the command used to start Codex app-server for `git-impact analyze`.
 - `GIT_IMPACT_MODEL`
   - Overrides the model used by the Git Impact Analyzer Codex app-server phase agent. If unset, `WTL_MODEL` is used as a fallback; if neither is set, the default is `gpt-5.4`.
+- Git Impact Agent turns run with Codex app-server `workspaceWrite` sandbox plus network access so the Agent can reach the local OneQuery self-host gateway.
 
 ### Harness
 

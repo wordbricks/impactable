@@ -40,6 +40,26 @@ func TestThreadStartParamsAllowProductSpecificServiceName(t *testing.T) {
 	}
 }
 
+func TestTurnStartParamsCanEnableNetworkAccess(t *testing.T) {
+	t.Parallel()
+
+	params := turnStartParams("thr-test", "run onequery", runConfig{
+		Sandbox:       "workspace-write",
+		NetworkAccess: true,
+	})
+
+	policy, ok := params["sandboxPolicy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected sandboxPolicy map, got %#v", params["sandboxPolicy"])
+	}
+	if got := policy["type"]; got != "workspaceWrite" {
+		t.Fatalf("expected workspaceWrite sandbox policy, got %#v", got)
+	}
+	if got := policy["networkAccess"]; got != true {
+		t.Fatalf("expected networkAccess true, got %#v", got)
+	}
+}
+
 func TestClientInfoParamsAllowProductSpecificIdentity(t *testing.T) {
 	t.Parallel()
 
