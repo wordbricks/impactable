@@ -131,6 +131,53 @@ func TestBuildAgentPhasePromptIncludesRuntimeContract(t *testing.T) {
 			t.Fatalf("prompt missing %q:\n%s", expected, prompt)
 		}
 	}
+	if strings.Contains(prompt, "non-queryable") {
+		t.Fatalf("source check prompt should not wait on non-queryable sources:\n%s", prompt)
+	}
+}
+
+func TestResolveAgentModel(t *testing.T) {
+	tests := []struct {
+		name           string
+		configModel    string
+		gitImpactModel string
+		wtlModel       string
+		want           string
+	}{
+		{
+			name:           "git impact env wins",
+			configModel:    "configured-model",
+			gitImpactModel: "env-model",
+			wtlModel:       "wtl-model",
+			want:           "env-model",
+		},
+		{
+			name:        "wtl model fallback",
+			configModel: "configured-model",
+			wtlModel:    "wtl-model",
+			want:        "wtl-model",
+		},
+		{
+			name:        "configured model fallback",
+			configModel: "configured-model",
+			want:        "configured-model",
+		},
+		{
+			name: "default model",
+			want: "gpt-5.4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(agentModelEnv, tt.gitImpactModel)
+			t.Setenv(agentFallbackModelEnv, tt.wtlModel)
+
+			if got := ResolveAgentModel(tt.configModel); got != tt.want {
+				t.Fatalf("ResolveAgentModel(%q) = %q, want %q", tt.configModel, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestAgentHandlersIncludesAllPhases(t *testing.T) {

@@ -1,8 +1,8 @@
 onequery:
   org: jay
   sources:
-    github: github-main
-    analytics: amplitude-prod
+    github: wordbricks-github
+    analytics: getgpt-prod
 
 analysis:
   before_window_days: 7

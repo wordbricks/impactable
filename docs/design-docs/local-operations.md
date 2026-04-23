@@ -73,7 +73,7 @@
 - `GIT_IMPACT_CODEX_COMMAND`
   - Overrides the command used to start Codex app-server for `git-impact analyze`.
 - `GIT_IMPACT_MODEL`
-  - Overrides the model used by the Git Impact Analyzer Codex app-server phase agent. If unset, `WTL_MODEL` is used as a fallback.
+  - Overrides the model used by the Git Impact Analyzer Codex app-server phase agent. If unset, `WTL_MODEL` is used as a fallback; if neither is set, the default is `gpt-5.4`.
 
 ### Harness
 

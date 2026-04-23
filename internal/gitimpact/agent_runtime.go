@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultAgentModel     = "gpt-5.3-codex"
+	defaultAgentModel     = "gpt-5.4"
 	agentServiceName      = "git-impact"
 	agentCommandEnv       = "GIT_IMPACT_CODEX_COMMAND"
 	agentModelEnv         = "GIT_IMPACT_MODEL"
@@ -303,7 +303,7 @@ Only include data fields that are relevant to this phase.`, phase, string(state)
 func phaseInstructions(phase Phase) string {
 	switch phase {
 	case PhaseSourceCheck:
-		return "Verify org and required GitHub/Analytics OneQuery sources. If a required source is missing or non-queryable, return directive wait with a specific question. Otherwise return advance_phase."
+		return "Verify org and required GitHub/Analytics OneQuery sources. If a required source is missing, return directive wait with a specific question. Otherwise return advance_phase."
 	case PhaseCollect:
 		return "Collect GitHub PR, commit, branch, tag, release, label, and changed-file data for the requested scope. Return collected_data and advance_phase when enough data is present."
 	case PhaseLink:
