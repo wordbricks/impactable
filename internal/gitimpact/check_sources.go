@@ -17,7 +17,7 @@ type SourceCheckResult struct {
 }
 
 // CheckSources validates auth/org state and discovers required sources.
-func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*SourceCheckResult, error) {
+func CheckSources(ctx context.Context, client *OneQueryClient, cfg *Config) (*SourceCheckResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -25,12 +25,13 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 		return nil, err
 	}
 	if client == nil {
-		return nil, fmt.Errorf("velen client is nil")
+		return nil, fmt.Errorf("onequery client is nil")
 	}
+	client = oneQueryClientForConfig(client, cfg)
 
 	whoAmI, err := client.WhoAmI()
 	if err != nil {
-		return nil, fmt.Errorf("velen auth whoami: %w", err)
+		return nil, fmt.Errorf("onequery auth whoami: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -38,7 +39,7 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 
 	org, err := client.CurrentOrg()
 	if err != nil {
-		return nil, fmt.Errorf("velen org current: %w", err)
+		return nil, fmt.Errorf("onequery org current: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -46,7 +47,7 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 
 	sources, err := client.ListSources()
 	if err != nil {
-		return nil, fmt.Errorf("velen source list: %w", err)
+		return nil, fmt.Errorf("onequery source list: %w", err)
 	}
 
 	result := &SourceCheckResult{
@@ -76,17 +77,17 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 
 	// Fallback to configured source keys when provider type metadata is absent or non-standard.
 	if result.GitHubSource == nil && cfg != nil {
-		result.GitHubSource = sourceByKey(sources, cfg.Velen.Sources.GitHub)
+		result.GitHubSource = sourceByKey(sources, cfg.OneQuery.Sources.GitHub)
 	}
 	if result.AnalyticsSource == nil && cfg != nil {
-		result.AnalyticsSource = sourceByKey(sources, cfg.Velen.Sources.Analytics)
+		result.AnalyticsSource = sourceByKey(sources, cfg.OneQuery.Sources.Analytics)
 	}
 
 	if result.GitHubSource == nil {
 		result.Errors = append(result.Errors, "github source not found")
 	} else {
 		if cfg != nil {
-			cfg.Velen.Sources.GitHub = result.GitHubSource.SourceKey()
+			cfg.OneQuery.Sources.GitHub = result.GitHubSource.SourceKey()
 		}
 		result.GitHubOK = true
 	}
@@ -95,7 +96,7 @@ func CheckSources(ctx context.Context, client *VelenClient, cfg *Config) (*Sourc
 		result.Errors = append(result.Errors, "analytics source not found")
 	} else {
 		if cfg != nil {
-			cfg.Velen.Sources.Analytics = result.AnalyticsSource.SourceKey()
+			cfg.OneQuery.Sources.Analytics = result.AnalyticsSource.SourceKey()
 		}
 		result.AnalyticsOK = true
 	}
@@ -136,4 +137,14 @@ func isAnalyticsProvider(provider string) bool {
 		return true
 	}
 	return containsAny(normalized, "analytics", "amplitude", "mixpanel", "segment")
+}
+
+func oneQueryClientForConfig(client *OneQueryClient, cfg *Config) *OneQueryClient {
+	if client == nil || cfg == nil {
+		return client
+	}
+	if strings.TrimSpace(cfg.OneQuery.Org) == "" {
+		return client
+	}
+	return client.WithOrg(cfg.OneQuery.Org)
 }

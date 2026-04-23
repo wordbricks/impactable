@@ -17,7 +17,7 @@ const (
 	analyticsSchemaSQL     = "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = current_schema() LIMIT 200"
 )
 
-type scoreQueryFn func(client *VelenClient, sourceKey string, sql string) (*QueryResult, error)
+type scoreQueryFn func(client *OneQueryClient, sourceKey string, sql string) (*QueryResult, error)
 
 // ScoreHandler calculates PR impact scores from analytics metrics and deployment windows.
 type ScoreHandler struct {
@@ -29,16 +29,17 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 	if runCtx == nil {
 		return nil, fmt.Errorf("run context is required")
 	}
-	if runCtx.VelenClient == nil {
-		return nil, fmt.Errorf("velen client is required")
+	if runCtx.OneQueryClient == nil {
+		return nil, fmt.Errorf("onequery client is required")
 	}
 	if runCtx.LinkedData == nil {
 		return nil, fmt.Errorf("linked data is required")
 	}
+	client := oneQueryClientForConfig(runCtx.OneQueryClient, runCtx.Config)
 
 	sourceKey := ""
 	if runCtx.Config != nil {
-		sourceKey = strings.TrimSpace(runCtx.Config.Velen.Sources.Analytics)
+		sourceKey = strings.TrimSpace(runCtx.Config.OneQuery.Sources.Analytics)
 	}
 	if sourceKey == "" {
 		return nil, fmt.Errorf("analytics source key is required")
@@ -46,12 +47,12 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 
 	query := h.Query
 	if query == nil {
-		query = func(client *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
+		query = func(client *OneQueryClient, sourceKey string, sql string) (*QueryResult, error) {
 			return client.Query(sourceKey, sql)
 		}
 	}
 
-	schemaResult, err := query(runCtx.VelenClient, sourceKey, analyticsSchemaSQL)
+	schemaResult, err := query(client, sourceKey, analyticsSchemaSQL)
 	if err != nil {
 		return nil, fmt.Errorf("score schema discovery: %w", err)
 	}
@@ -87,7 +88,7 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 		beforeSQL := buildMetricQuery(tableName, metricCol, sourceKey, beforeStart, deployment.DeployedAt)
 		afterSQL := buildMetricQuery(tableName, metricCol, sourceKey, deployment.DeployedAt, afterEnd)
 
-		beforeResult, err := query(runCtx.VelenClient, sourceKey, beforeSQL)
+		beforeResult, err := query(client, sourceKey, beforeSQL)
 		if err != nil {
 			impact.Reasoning = fmt.Sprintf(
 				"Metric query failed for %s.%s before deployment: %v. Assigned neutral score 0.0 with %s confidence (%d overlapping deployments in +/-7 days).",
@@ -101,7 +102,7 @@ func (h *ScoreHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResul
 			continue
 		}
 
-		afterResult, err := query(runCtx.VelenClient, sourceKey, afterSQL)
+		afterResult, err := query(client, sourceKey, afterSQL)
 		if err != nil {
 			impact.Reasoning = fmt.Sprintf(
 				"Metric query failed for %s.%s after deployment: %v. Assigned neutral score 0.0 with %s confidence (%d overlapping deployments in +/-7 days).",

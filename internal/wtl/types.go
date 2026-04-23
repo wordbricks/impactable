@@ -70,10 +70,17 @@ type request struct {
 }
 
 type runConfig struct {
-	CWD      string
-	Model    string
-	MaxIter  int
-	MaxRetry int
+	CWD            string
+	Model          string
+	MaxIter        int
+	MaxRetry       int
+	ServiceName    string
+	ClientName     string
+	ClientTitle    string
+	ClientVersion  string
+	ApprovalPolicy string
+	Sandbox        string
+	CommandEnv     string
 }
 
 type turnResult struct {

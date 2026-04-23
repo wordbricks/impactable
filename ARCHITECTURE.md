@@ -2,13 +2,14 @@
 
 ## Purpose
 
-This repository currently contains two related systems:
+This repository currently contains four related systems:
 
-1. A Go implementation of `ralph-loop`, an agent-first CLI that prepares a worktree, drives Codex through a setup and coding loop, and streams structured run data.
-2. A Go implementation of `wtl`, a minimal WhatTheLoop CLI that runs a single prompt loop through Codex app-server using explicit engine, policy, and observer roles.
-3. A Rust `harnesscli` bootstrap that turns the repository into a harnessed codebase with stable commands for smoke, lint, typecheck, test, audit, init, boot, observability, and cleanup.
+1. A Go implementation of `git-impact`, a phased Git impact analyzer CLI that runs each analysis phase as a Codex app-server WTL Agent turn and uses OneQuery for source discovery and read-only queries.
+2. A Go implementation of `ralph-loop`, an agent-first CLI that prepares a worktree, drives Codex through a setup and coding loop, and streams structured run data.
+3. A Go implementation of `wtl`, a minimal WhatTheLoop CLI that runs a single prompt loop through Codex app-server using explicit engine, policy, and observer roles.
+4. A Rust `harnesscli` bootstrap that turns the repository into a harnessed codebase with stable commands for smoke, lint, typecheck, test, audit, init, boot, observability, and cleanup.
 
-The long-term product direction in [`SPEC.md`](SPEC.md) is a Git impact analyzer. The code that exists today is still mostly harness and orchestration infrastructure.
+The long-term product direction in [`SPEC.md`](SPEC.md) is a Git impact analyzer. The code that exists today includes a Codex app-server phase-agent runtime for the `git-impact analyze` path plus focused Go handlers used by package-level tests.
 
 ## Package Boundaries
 
@@ -20,19 +21,29 @@ The long-term product direction in [`SPEC.md`](SPEC.md) is a Git impact analyzer
 - `cmd/wtl`
   - Thin CLI entrypoint.
   - Resolves the current working directory and hands control to `internal/wtl`.
+- `cmd/git-impact`
+  - Cobra CLI entrypoint for `analyze` and `check-sources`.
+  - Loads config, builds analysis context, runs the phased engine with the Codex app-server agent runtime by default, and optionally starts the Bubble Tea TUI.
 - `internal/ralphloop`
   - Parsing, schema generation, worktree management, session tracking, log handling, JSON-RPC transport, and orchestration.
   - This package is the only place that should contain Ralph Loop behavior.
 - `internal/wtl`
   - Parsing, prompt intake, WTL engine/policy/observer coordination, structured output handling, and Codex app-server turn execution for the WTL CLI.
+  - Exposes a reusable Codex app-server thread/turn client used by product-specific WTL integrations.
   - This package is the only place that should contain WTL behavior.
+- `internal/gitimpact`
+  - Config parsing, OneQuery subprocess integration, Codex phase-agent prompts and result parsing, package-level phase helpers, source checks, TUI models, and report rendering.
+  - This package is the only place that should contain Git Impact Analyzer behavior.
 
 Dependency direction:
 
 - `cmd/ralph-loop` -> `internal/ralphloop`
 - `cmd/wtl` -> `internal/wtl`
+- `cmd/git-impact` -> `internal/gitimpact`
+- `internal/gitimpact` -> `internal/wtl` for Codex app-server thread/turn execution
 - `internal/ralphloop` -> Go standard library
 - `internal/wtl` -> Go standard library
+- `internal/gitimpact` -> Go standard library + CLI/TUI/config libraries
 
 ### Rust harness runtime
 
@@ -68,6 +79,8 @@ Dependency direction:
   - Repo-root executable wrapper around `go run ./cmd/ralph-loop`.
 - `./wtl`
   - Repo-root executable wrapper around `go run ./cmd/wtl`.
+- `./git-impact`
+  - Repo-root executable wrapper around `go run ./cmd/git-impact`.
 - `cargo build --release --manifest-path harness/Cargo.toml`
   - Builds `harnesscli`.
 - `make smoke`, `make check`, `make test`

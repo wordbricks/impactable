@@ -11,14 +11,14 @@ func TestSourceCheckHandlerHandle_AdvancesWhenSourcesReady(t *testing.T) {
 	t.Parallel()
 
 	handler := &SourceCheckHandler{
-		CheckSources: func(context.Context, *VelenClient, *Config) (*SourceCheckResult, error) {
+		CheckSources: func(context.Context, *OneQueryClient, *Config) (*SourceCheckResult, error) {
 			return &SourceCheckResult{GitHubOK: true, AnalyticsOK: true}, nil
 		},
 	}
 
 	result, err := handler.Handle(context.Background(), &RunContext{
-		VelenClient: &VelenClient{},
-		Config:      &Config{},
+		OneQueryClient: &OneQueryClient{},
+		Config:         &Config{},
 	})
 	if err != nil {
 		t.Fatalf("handle returned error: %v", err)
@@ -32,7 +32,7 @@ func TestSourceCheckHandlerHandle_WaitsWhenSourcesNotReady(t *testing.T) {
 	t.Parallel()
 
 	handler := &SourceCheckHandler{
-		CheckSources: func(context.Context, *VelenClient, *Config) (*SourceCheckResult, error) {
+		CheckSources: func(context.Context, *OneQueryClient, *Config) (*SourceCheckResult, error) {
 			return &SourceCheckResult{
 				GitHubOK:    false,
 				AnalyticsOK: true,
@@ -42,8 +42,8 @@ func TestSourceCheckHandlerHandle_WaitsWhenSourcesNotReady(t *testing.T) {
 	}
 
 	result, err := handler.Handle(context.Background(), &RunContext{
-		VelenClient: &VelenClient{},
-		Config:      &Config{},
+		OneQueryClient: &OneQueryClient{},
+		Config:         &Config{},
 	})
 	if err != nil {
 		t.Fatalf("handle returned error: %v", err)
@@ -64,7 +64,7 @@ func TestSourceCheckHandlerHandle_UsesWaitResponseYToAdvance(t *testing.T) {
 
 	called := false
 	handler := &SourceCheckHandler{
-		CheckSources: func(context.Context, *VelenClient, *Config) (*SourceCheckResult, error) {
+		CheckSources: func(context.Context, *OneQueryClient, *Config) (*SourceCheckResult, error) {
 			called = true
 			return &SourceCheckResult{}, nil
 		},
@@ -103,12 +103,12 @@ func TestSourceCheckHandlerHandle_PropagatesCheckSourcesError(t *testing.T) {
 	t.Parallel()
 
 	handler := &SourceCheckHandler{
-		CheckSources: func(context.Context, *VelenClient, *Config) (*SourceCheckResult, error) {
+		CheckSources: func(context.Context, *OneQueryClient, *Config) (*SourceCheckResult, error) {
 			return nil, errors.New("boom")
 		},
 	}
 	_, err := handler.Handle(context.Background(), &RunContext{
-		VelenClient: &VelenClient{},
+		OneQueryClient: &OneQueryClient{},
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -117,4 +117,3 @@ func TestSourceCheckHandlerHandle_PropagatesCheckSourcesError(t *testing.T) {
 		t.Fatalf("expected wrapped check-sources error, got %v", err)
 	}
 }
-

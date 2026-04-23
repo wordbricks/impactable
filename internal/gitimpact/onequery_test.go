@@ -13,13 +13,13 @@ import (
 	"time"
 )
 
-func TestNewVelenClientDefaultTimeout(t *testing.T) {
-	client := NewVelenClient(0)
-	if client.timeout != defaultVelenTimeout {
-		t.Fatalf("expected default timeout %s, got %s", defaultVelenTimeout, client.timeout)
+func TestNewOneQueryClientDefaultTimeout(t *testing.T) {
+	client := NewOneQueryClient(0)
+	if client.timeout != defaultOneQueryTimeout {
+		t.Fatalf("expected default timeout %s, got %s", defaultOneQueryTimeout, client.timeout)
 	}
-	if client.binary != "velen" {
-		t.Fatalf("expected binary velen, got %q", client.binary)
+	if client.binary != "onequery" {
+		t.Fatalf("expected binary onequery, got %q", client.binary)
 	}
 }
 
@@ -35,7 +35,7 @@ func TestWhoAmISuccess(t *testing.T) {
 		t.Fatalf("unexpected whoami result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "--output", "json", "auth", "whoami"})
+	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "auth", "whoami"})
 }
 
 func TestCurrentOrgSuccess(t *testing.T) {
@@ -50,7 +50,7 @@ func TestCurrentOrgSuccess(t *testing.T) {
 		t.Fatalf("unexpected org result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "--output", "json", "org", "current"})
+	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "org", "current"})
 }
 
 func TestListSourcesSuccess(t *testing.T) {
@@ -64,11 +64,11 @@ func TestListSourcesSuccess(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("expected 1 source, got %d", len(result))
 	}
-	if result[0].Key != "github-main" || result[0].ProviderType != "GITHUB" {
+	if result[0].SourceKey() != "github-main" || result[0].ProviderLabel() != "github" {
 		t.Fatalf("unexpected source result: %+v", result[0])
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "--output", "json", "source", "list"})
+	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "source", "list", "--page-all"})
 }
 
 func TestShowSourceSuccess(t *testing.T) {
@@ -79,11 +79,11 @@ func TestShowSourceSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ShowSource returned error: %v", err)
 	}
-	if result.Key != "amplitude-prod" || result.ProviderType != "ANALYTICS" {
+	if result.SourceKey() != "amplitude-prod" || result.ProviderLabel() != "amplitude" {
 		t.Fatalf("unexpected source result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "--output", "json", "source", "show", "amplitude-prod"})
+	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "source", "show", "amplitude-prod"})
 }
 
 func TestQuerySuccessAndSafeArgs(t *testing.T) {
@@ -99,7 +99,18 @@ func TestQuerySuccessAndSafeArgs(t *testing.T) {
 		t.Fatalf("unexpected query result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"velen", "--output", "json", "query", "--source", "github-main", "--sql", sql})
+	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "query", "exec", "--source", "github-main", "--sql", sql, "--max-rows", "500"})
+}
+
+func TestClientWithOrgPassesOrgGlobalOption(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	client := newHelperClient(t, "source_list_success", time.Second, argsFile).WithOrg("impactable")
+
+	if _, err := client.ListSources(); err != nil {
+		t.Fatalf("ListSources returned error: %v", err)
+	}
+
+	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "--org", "impactable", "source", "list", "--page-all"})
 }
 
 func TestCurrentOrgEnvelopeSuccess(t *testing.T) {
@@ -146,7 +157,7 @@ func TestQueryEnvelopeSuccess(t *testing.T) {
 	}
 }
 
-func TestNonZeroExitReturnsStructuredVelenError(t *testing.T) {
+func TestNonZeroExitReturnsStructuredOneQueryError(t *testing.T) {
 	client := newHelperClient(t, "nonzero_json_error", time.Second, "")
 
 	_, err := client.WhoAmI()
@@ -154,16 +165,16 @@ func TestNonZeroExitReturnsStructuredVelenError(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 
-	var velenErr *VelenError
-	if !errors.As(err, &velenErr) {
-		t.Fatalf("expected VelenError, got %T", err)
+	var oneQueryErr *OneQueryError
+	if !errors.As(err, &oneQueryErr) {
+		t.Fatalf("expected OneQueryError, got %T", err)
 	}
-	if velenErr.Code != "unauthorized" || velenErr.Message != "bad token" {
-		t.Fatalf("unexpected velen error: %+v", velenErr)
+	if oneQueryErr.Code != "unauthorized" || oneQueryErr.Message != "bad token" {
+		t.Fatalf("unexpected onequery error: %+v", oneQueryErr)
 	}
 }
 
-func TestNonZeroExitFallbackVelenError(t *testing.T) {
+func TestNonZeroExitFallbackOneQueryError(t *testing.T) {
 	client := newHelperClient(t, "nonzero_plain_error", time.Second, "")
 
 	_, err := client.WhoAmI()
@@ -171,15 +182,15 @@ func TestNonZeroExitFallbackVelenError(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 
-	var velenErr *VelenError
-	if !errors.As(err, &velenErr) {
-		t.Fatalf("expected VelenError, got %T", err)
+	var oneQueryErr *OneQueryError
+	if !errors.As(err, &oneQueryErr) {
+		t.Fatalf("expected OneQueryError, got %T", err)
 	}
-	if velenErr.Code != "exit_7" {
-		t.Fatalf("expected code exit_7, got %q", velenErr.Code)
+	if oneQueryErr.Code != "exit_7" {
+		t.Fatalf("expected code exit_7, got %q", oneQueryErr.Code)
 	}
-	if !strings.Contains(velenErr.Message, "permission denied") || !strings.Contains(velenErr.Message, "partial output") {
-		t.Fatalf("unexpected velen error message: %q", velenErr.Message)
+	if !strings.Contains(oneQueryErr.Message, "permission denied") || !strings.Contains(oneQueryErr.Message, "partial output") {
+		t.Fatalf("unexpected onequery error message: %q", oneQueryErr.Message)
 	}
 }
 
@@ -191,13 +202,13 @@ func TestInvalidJSONReturnsDecodeError(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 
-	var velenErr *VelenError
-	if errors.As(err, &velenErr) {
-		t.Fatalf("expected non-VelenError decode error, got %+v", velenErr)
+	var oneQueryErr *OneQueryError
+	if errors.As(err, &oneQueryErr) {
+		t.Fatalf("expected non-OneQueryError decode error, got %+v", oneQueryErr)
 	}
 }
 
-func TestTimeoutReturnsVelenError(t *testing.T) {
+func TestTimeoutReturnsOneQueryError(t *testing.T) {
 	client := newHelperClient(t, "sleep", 25*time.Millisecond, "")
 
 	_, err := client.WhoAmI()
@@ -205,29 +216,29 @@ func TestTimeoutReturnsVelenError(t *testing.T) {
 		t.Fatalf("expected timeout error")
 	}
 
-	var velenErr *VelenError
-	if !errors.As(err, &velenErr) {
-		t.Fatalf("expected VelenError, got %T", err)
+	var oneQueryErr *OneQueryError
+	if !errors.As(err, &oneQueryErr) {
+		t.Fatalf("expected OneQueryError, got %T", err)
 	}
-	if velenErr.Code != "timeout" {
-		t.Fatalf("expected timeout code, got %q", velenErr.Code)
+	if oneQueryErr.Code != "timeout" {
+		t.Fatalf("expected timeout code, got %q", oneQueryErr.Code)
 	}
 }
 
-func newHelperClient(t *testing.T, scenario string, timeout time.Duration, argsFile string) *VelenClient {
+func newHelperClient(t *testing.T, scenario string, timeout time.Duration, argsFile string) *OneQueryClient {
 	t.Helper()
-	client := NewVelenClient(timeout)
+	client := NewOneQueryClient(timeout)
 	client.cmdFactory = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		helperArgs := []string{"-test.run=TestVelenHelperProcess", "--", name}
+		helperArgs := []string{"-test.run=TestOneQueryHelperProcess", "--", name}
 		helperArgs = append(helperArgs, args...)
 		cmd := exec.CommandContext(ctx, os.Args[0], helperArgs...)
 
 		env := append(os.Environ(),
-			"GO_WANT_VELEN_HELPER_PROCESS=1",
-			"VELEN_HELPER_SCENARIO="+scenario,
+			"GO_WANT_ONEQUERY_HELPER_PROCESS=1",
+			"ONEQUERY_HELPER_SCENARIO="+scenario,
 		)
 		if argsFile != "" {
-			env = append(env, "VELEN_ARGS_FILE="+argsFile)
+			env = append(env, "ONEQUERY_ARGS_FILE="+argsFile)
 		}
 		cmd.Env = env
 		return cmd
@@ -251,8 +262,8 @@ func expectArgs(t *testing.T, argsFile string, expected []string) {
 	}
 }
 
-func TestVelenHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_VELEN_HELPER_PROCESS") != "1" {
+func TestOneQueryHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_ONEQUERY_HELPER_PROCESS") != "1" {
 		return
 	}
 
@@ -269,16 +280,16 @@ func TestVelenHelperProcess(t *testing.T) {
 	}
 
 	args := os.Args[separatorIndex+1:]
-	if path := os.Getenv("VELEN_ARGS_FILE"); path != "" {
+	if path := os.Getenv("ONEQUERY_ARGS_FILE"); path != "" {
 		if err := os.WriteFile(path, []byte(strings.Join(args, "\n")), 0o600); err != nil {
 			_, _ = os.Stderr.WriteString(fmt.Sprintf("write args: %v", err))
 			os.Exit(2)
 		}
 	}
 
-	switch os.Getenv("VELEN_HELPER_SCENARIO") {
+	switch os.Getenv("ONEQUERY_HELPER_SCENARIO") {
 	case "whoami_success":
-		_, _ = os.Stdout.WriteString(`{"email":"agent@example.com","org":"impactable"}`)
+		_, _ = os.Stdout.WriteString(`{"command":"auth whoami","data":{"effectiveOrg":"impactable","user":{"email":"agent@example.com"}},"ok":true,"warnings":[]}`)
 		os.Exit(0)
 	case "org_success":
 		_, _ = os.Stdout.WriteString(`{"slug":"impactable","name":"Impactable"}`)
@@ -287,19 +298,19 @@ func TestVelenHelperProcess(t *testing.T) {
 		_, _ = os.Stdout.WriteString(`{"command":"org current","data":{"org":"impactable","resolved":true,"source":"config"},"ok":true,"warnings":[]}`)
 		os.Exit(0)
 	case "source_list_success":
-		_, _ = os.Stdout.WriteString(`[{"key":"github-main","name":"GitHub","provider_type":"GITHUB","capabilities":["QUERY","SYNC"]}]`)
+		_, _ = os.Stdout.WriteString(`[{"sourceKey":"github-main","displayName":"GitHub","provider":"github","queryable":true,"status":"active"}]`)
 		os.Exit(0)
 	case "source_list_envelope_success":
-		_, _ = os.Stdout.WriteString(`{"command":"source list","data":{"items":[{"name":"getgpt-repo","provider":"github","query":"yes","status":"active"},{"name":"getgpt-ga","provider":"ga","query":true,"status":"active"}]},"ok":true,"warnings":[]}`)
+		_, _ = os.Stdout.WriteString(`{"command":"source list","data":{"sources":[{"sourceKey":"getgpt-repo","provider":"github","queryable":true,"status":"active"},{"sourceKey":"getgpt-ga","provider":"ga","queryable":false,"status":"active"}]},"ok":true,"warnings":[]}`)
 		os.Exit(0)
 	case "source_show_success":
-		_, _ = os.Stdout.WriteString(`{"key":"amplitude-prod","name":"Amplitude","provider_type":"ANALYTICS","capabilities":["QUERY"]}`)
+		_, _ = os.Stdout.WriteString(`{"source":{"sourceKey":"amplitude-prod","displayName":"Amplitude","provider":"amplitude","queryable":true,"status":"active"}}`)
 		os.Exit(0)
 	case "query_success":
 		_, _ = os.Stdout.WriteString(`{"columns":["id"],"rows":[[1]],"row_count":1}`)
 		os.Exit(0)
 	case "query_envelope_success":
-		_, _ = os.Stdout.WriteString(`{"command":"query","data":{"columns":["id"],"rows":[[1]],"row_count":1},"ok":true,"warnings":[]}`)
+		_, _ = os.Stdout.WriteString(`{"command":"query exec","data":{"columns":[{"name":"id","logicalType":"number"}],"rows":[{"values":[1]}],"rowCount":1},"ok":true,"warnings":[]}`)
 		os.Exit(0)
 	case "nonzero_json_error":
 		_, _ = os.Stderr.WriteString(`{"code":"unauthorized","message":"bad token"}`)

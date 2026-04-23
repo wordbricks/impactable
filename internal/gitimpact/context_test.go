@@ -78,9 +78,9 @@ func TestBuildInitialPrompt_IncludesScopeAndSources(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Velen: VelenConfig{
+		OneQuery: OneQueryConfig{
 			Org: "impactable",
-			Sources: VelenSources{
+			Sources: OneQuerySources{
 				GitHub:    "github-main",
 				Analytics: "amplitude-prod",
 			},

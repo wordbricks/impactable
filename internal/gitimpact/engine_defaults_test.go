@@ -21,7 +21,7 @@ func TestNewDefaultEngineWiresDependencies(t *testing.T) {
 	t.Parallel()
 
 	waitFn := func(string) (string, error) { return "y", nil }
-	engine := NewDefaultEngine(NewVelenClient(0), nil, waitFn)
+	engine := NewDefaultEngine(NewOneQueryClient(0), nil, waitFn)
 	if engine == nil {
 		t.Fatal("expected non-nil engine")
 	}

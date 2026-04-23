@@ -43,6 +43,22 @@ func TestRun_MissingDefaultConfigReturnsActionableError(t *testing.T) {
 	}
 }
 
+func TestRun_AnalyzeRejectsRemovedAgentRuntimeFlag(t *testing.T) {
+	dir := t.TempDir()
+	writeMainTestConfig(t, dir)
+
+	var stdout bytes.Buffer
+	exitCode := withWorkingDirectory(t, dir, func() int {
+		return run([]string{"analyze", "--output", "json", "--agent-runtime", "nope"}, strings.NewReader(""), &stdout, &stdout)
+	})
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1, got %d", exitCode)
+	}
+	if !strings.Contains(stdout.String(), "unknown flag: --agent-runtime") {
+		t.Fatalf("expected removed runtime flag error in output, got %q", stdout.String())
+	}
+}
+
 func TestNewPromptWaitHandler_ReleasesAndRestoresTerminal(t *testing.T) {
 	var stdout bytes.Buffer
 	terminal := &stubTerminalController{}
@@ -89,7 +105,7 @@ func writeMainTestConfig(t *testing.T, dir string) {
 	t.Helper()
 
 	path := filepath.Join(dir, "impact-analyzer.yaml")
-	content := `velen:
+	content := `onequery:
   org: impactable
   sources:
     github: github-main

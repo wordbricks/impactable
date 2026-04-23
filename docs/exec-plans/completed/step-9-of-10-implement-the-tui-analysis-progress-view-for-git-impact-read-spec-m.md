@@ -14,7 +14,7 @@ Implement the analysis-progress TUI for `git-impact analyze` (per `SPEC.md` sect
 - [x] M1 (`completed`): Expanded `AnalysisModel` in `internal/gitimpact/tui_model.go` with required fields (`phases`, `currentPhase`, `iteration`, `totalPhases`, `isWaiting`, `waitMessage`, `spinner`, `done`, `result`, `err`) and phase-aware status transitions for all engine bridge messages.
 - [x] M2 (`completed`): Implemented `View()` with a SPEC-aligned progress layout (title, separator, progress bar/turn + phase label, phase rows with done/running/waiting icons, and conditional wait message block).
 - [x] M3 (`completed`): Added `internal/gitimpact/tui_model_test.go` covering `Update()` behavior for `TurnStartedMsg`, `PhaseAdvancedMsg`, `WaitEnteredMsg`, `WaitResolvedMsg`, `RunCompletedMsg`, `RunExhaustedMsg`, and spinner tick handling.
-- [x] M4 (`completed`): Added `NewDefaultEngine(client *VelenClient, observer Observer, waitHandler WaitHandler) *Engine` plus `DefaultHandlers()` in `internal/gitimpact/` with all phase handlers registered.
+- [x] M4 (`completed`): Added `NewDefaultEngine(client *OneQueryClient, observer Observer, waitHandler WaitHandler) *Engine` plus `DefaultHandlers()` in `internal/gitimpact/` with all phase handlers registered.
 - [x] M5 (`completed`): Updated `cmd/git-impact/main.go` `analyze` command to instantiate and run Bubble Tea + `TUIObserver`, construct `RunContext`, execute engine on main goroutine, and wait for TUI shutdown.
 
 ## Current progress

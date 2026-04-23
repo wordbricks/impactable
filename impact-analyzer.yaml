@@ -1,5 +1,5 @@
-velen:
-  org: impactable
+onequery:
+  org: jay
   sources:
     github: github-main
     analytics: amplitude-prod

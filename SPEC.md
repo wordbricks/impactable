@@ -4,9 +4,9 @@
 
 A tool that analyzes Git history (PRs, feature branches, commits) and quantitatively measures the real **impact** each change had on the product.
 
-It uses Velen CLI to access already connected data sources such as GitHub and analytics platforms, then traces the causal path from code changes to deployment to changes in user behavior.
+It uses OneQuery CLI to access already connected data sources such as GitHub and analytics platforms, then traces the causal path from code changes to deployment to changes in user behavior.
 
-The analysis pipeline is driven by a single WTL (WhatTheLoop) Agent that progresses through ordered phases. Each phase is one WTL Turn. The Agent handles all Velen CLI interactions directly — source discovery, query writing, and execution.
+The analysis pipeline is driven by a single WTL (WhatTheLoop) Agent that progresses through ordered phases. Each phase is one WTL Turn. The Agent handles all OneQuery CLI interactions directly — source discovery, query writing, and execution.
 
 **Scope**: Monorepo only.
 **Agent runtime**: Codex App Server.
@@ -45,7 +45,7 @@ The analysis pipeline is driven by a single WTL (WhatTheLoop) Agent that progres
 │             │   (Turn 3)   │   │   (Turn 4)   │    │
 │             └──────────────┘   └──────────────┘    │
 │                                                     │
-│  All Velen CLI calls made directly by the Agent     │
+│  All OneQuery CLI calls made directly by the Agent  │
 │  (GitHub + Analytics sources)                       │
 │                                                     │
 ├─────────────────────────────────────────────────────┤
@@ -94,13 +94,13 @@ Observer lifecycle events are converted to Bubble Tea `Msg` values and drive rea
 
 **Source Check (pre-Turn 1)**
 - Run automatically at the start of every `analyze` invocation
-- Agent runs `velen auth whoami`, `velen org current`, `velen source list`
+- Agent runs `onequery --org <org> auth whoami`, `onequery --org <org> org current`, `onequery --org <org> source list`
 - Verifies GitHub and Analytics sources exist
 - If a required source is missing, issue `wait` and ask the user to confirm before proceeding
 - Also available as standalone `git-impact check-sources` command
 
 **Collector (Turn 1)** - Collect Git data
-- Agent queries GitHub source via Velen for PR list, commit logs, branches, tags, and releases
+- Agent queries GitHub source via OneQuery for PR list, commit logs, branches, tags, and releases
 - Agent writes queries directly based on the analysis context (date range, PR number, feature name) passed from CLI args
 - Monorepo: all data comes from a single repo
 
@@ -115,7 +115,7 @@ Observer lifecycle events are converted to Bubble Tea `Msg` values and drive rea
   - Confirmed groupings are saved to `feature-map.yaml`
 
 **Impact Scorer (Turn 3)** - Calculate scores
-- Agent explores the Analytics source schema via Velen to discover available metrics
+- Agent explores the Analytics source schema via OneQuery to discover available metrics
 - Agent writes and executes queries directly, using inferred deployment times as before/after boundaries
 - Agent adjusts time windows from config defaults based on context (data density, deployment clustering, etc.)
 - Agent judges confidence based on: data point count, simultaneous deployments, metric volatility, and other signals
@@ -127,23 +127,23 @@ Observer lifecycle events are converted to Bubble Tea `Msg` values and drive rea
 
 ---
 
-## 4. Data Sources and Velen CLI Usage
+## 4. Data Sources and OneQuery CLI Usage
 
-All external data access must go through Velen CLI. The Agent handles all Velen CLI interactions directly — it writes queries, executes them, and interprets results.
+All external data access must go through OneQuery CLI. The Agent handles all OneQuery CLI interactions directly — it writes queries, executes them, and interprets results.
 
 ### 4.1 Access Flow
 
 ```bash
 # 1. Authenticate and verify org
-velen auth whoami
-velen org current
+onequery --org <org> auth whoami
+onequery --org <org> org current
 
 # 2. Discover available sources
-velen source list
-velen source show <source_key>
+onequery --org <org> source list
+onequery --org <org> source show <source_key>
 
 # 3. Query — written and executed directly by the Agent
-velen query --source <source_key> --sql "<agent-generated SQL>"
+onequery --org <org> query exec --source <source_key> --sql "<agent-generated SQL>"
 ```
 
 ### 4.2 Required Source Types
@@ -158,7 +158,7 @@ velen query --source <source_key> --sql "<agent-generated SQL>"
 ### 4.3 Source Discovery Strategy
 
 At the start of every `analyze` run, the Agent:
-1. Runs `velen source list` to find available sources
+1. Runs `onequery --org <org> source list` to find available sources
 2. Identifies GitHub and Analytics sources by provider type
 3. Confirms each required provider has a matching source
 4. If a required source type is missing, issues `wait` and asks the user
@@ -327,8 +327,8 @@ Rank  Author   PRs   Avg Impact  Top PR
 ```yaml
 # impact-analyzer.yaml
 
-velen:
-  org: "my-company"                    # Velen org slug
+onequery:
+  org: "my-company"                    # OneQuery org slug
   sources:
     github: "github-main"              # GitHub source key
     analytics: "amplitude-prod"        # analytics source key
@@ -358,8 +358,8 @@ feature_grouping:
 | UI components | Bubbles (spinner, table, progress, etc.) | Official component library for Bubble Tea |
 | Styling | Lip Gloss | Terminal styling library from the Charm ecosystem |
 | CLI entrypoint | Cobra + Viper | Integrates subcommands, flags, and config files |
-| Velen integration | Invoke `velen` CLI via `os/exec` | Agent runs Velen as a subprocess and parses results |
-| Data processing | Agent-generated SQL via Velen | Agent writes and executes all queries at runtime |
+| OneQuery integration | Invoke `onequery` CLI via `os/exec` | Agent runs OneQuery as a subprocess and parses results |
+| Data processing | Agent-generated SQL via OneQuery | Agent writes and executes all queries at runtime |
 | Report output | Terminal: interactive Bubble Tea TUI / Files: markdown + HTML | Interactive terminal view; file export triggered from TUI |
 | Configuration | YAML (Viper) | Readable, supports comments, and Viper handles YAML natively |
 | Testing | Go testing + testify | Standard-library-based with assertion helpers |
@@ -403,10 +403,11 @@ WTL Engine
 ## 10. Implementation Phases
 
 ### Phase 1 - Foundation (MVP)
-- [ ] Velen CLI wrapper (auth, source discovery, query execution via `os/exec`)
-- [ ] WTL engine and PhasedDeliveryPolicy implementation
+- [ ] OneQuery CLI wrapper (auth, source discovery, query execution via `os/exec`)
+- [x] Codex app-server phase-agent runtime (single thread, one WTL turn per phase)
+- [x] WTL engine and PhasedDeliveryPolicy implementation
 - [ ] WTL Observer → Bubble Tea Msg bridge
-- [ ] CLI arg → structured context → Agent initial prompt
+- [x] CLI arg → structured context → Agent initial prompt
 - [ ] Source check (pre-Turn): verify GitHub + Analytics sources
 - [ ] Collect PRs, tags, releases from GitHub source (Turn 1)
 - [ ] Infer deployment times from GitHub releases and tags (Turn 2)
@@ -431,10 +432,10 @@ WTL Engine
 ## 11. Constraints and Considerations
 
 - **Monorepo only**: Analysis targets a single repository. Multi-repo support is out of scope.
-- **Read-only**: Velen CLI only supports read-only access. All queries must use SELECT only.
+- **Read-only**: OneQuery CLI only supports read-only access. All queries must use SELECT only.
 - **Agent-generated queries**: The Agent writes all SQL at runtime. No pre-written query files are used.
 - **Query cost**: Agent must always specify a date range and LIMIT to avoid expensive large-scale queries.
-- **Org context**: Before starting analysis, verify the correct org with `velen org current`.
+- **Org context**: Before starting analysis, verify the correct org with `onequery --org <org> org current`.
 - **Source availability**: Confirmed at the start of every `analyze` run. Missing sources trigger `wait`.
 - **No warehouse dependency**: Deployment times are inferred from GitHub data only.
 - **Agent judgment**: Metric selection, confidence scores, deployment inference, and time window adjustments are all produced by the Agent. Reports must make this clear.

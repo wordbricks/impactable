@@ -62,7 +62,7 @@ func NewRootCommand(cwd string, stdin io.Reader, stdout io.Writer, stderr io.Wri
 
 	checkSourcesCmd := &cobra.Command{
 		Use:   "check-sources",
-		Short: "Validate configured Velen sources",
+		Short: "Validate configured OneQuery sources",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx, err := NewAnalysisContext("", 0, "", configPath)
 			if err != nil {

@@ -45,14 +45,14 @@ type PhaseHandler interface {
 
 // RunContext is mutable state shared across phase turns.
 type RunContext struct {
-	Config        *Config
-	AnalysisCtx   *AnalysisContext
-	VelenClient   *VelenClient
-	Phase         Phase
-	Iteration     int
-	CollectedData *CollectedData
-	LinkedData    *LinkedData
-	ScoredData    *ScoredData
+	Config         *Config
+	AnalysisCtx    *AnalysisContext
+	OneQueryClient *OneQueryClient
+	Phase          Phase
+	Iteration      int
+	CollectedData  *CollectedData
+	LinkedData     *LinkedData
+	ScoredData     *ScoredData
 }
 
 // CollectedData stores source collection outputs.

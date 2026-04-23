@@ -11,28 +11,39 @@ import (
 	"time"
 )
 
-const defaultVelenTimeout = 30 * time.Second
+const defaultOneQueryTimeout = 30 * time.Second
 
 type cmdFactory func(ctx context.Context, name string, args ...string) *exec.Cmd
 
-type VelenClient struct {
+type OneQueryClient struct {
 	binary     string
 	timeout    time.Duration
+	org        string
 	cmdFactory cmdFactory
 }
 
-func NewVelenClient(timeout time.Duration) *VelenClient {
+func NewOneQueryClient(timeout time.Duration) *OneQueryClient {
 	if timeout <= 0 {
-		timeout = defaultVelenTimeout
+		timeout = defaultOneQueryTimeout
 	}
-	return &VelenClient{
-		binary:     "velen",
+	return &OneQueryClient{
+		binary:     "onequery",
 		timeout:    timeout,
 		cmdFactory: exec.CommandContext,
 	}
 }
 
-func (c *VelenClient) WhoAmI() (*WhoAmIResult, error) {
+// WithOrg returns a shallow client copy that passes --org on org-scoped OneQuery calls.
+func (c *OneQueryClient) WithOrg(org string) *OneQueryClient {
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	clone.org = strings.TrimSpace(org)
+	return &clone
+}
+
+func (c *OneQueryClient) WhoAmI() (*WhoAmIResult, error) {
 	result := &WhoAmIResult{}
 	if err := c.runAndDecode(result, "auth", "whoami"); err != nil {
 		return nil, err
@@ -40,7 +51,7 @@ func (c *VelenClient) WhoAmI() (*WhoAmIResult, error) {
 	return result, nil
 }
 
-func (c *VelenClient) CurrentOrg() (*OrgResult, error) {
+func (c *OneQueryClient) CurrentOrg() (*OrgResult, error) {
 	result := &OrgResult{}
 	if err := c.runAndDecode(result, "org", "current"); err != nil {
 		return nil, err
@@ -48,13 +59,13 @@ func (c *VelenClient) CurrentOrg() (*OrgResult, error) {
 	return result, nil
 }
 
-func (c *VelenClient) ListSources() ([]Source, error) {
-	payload, err := c.run("source", "list")
+func (c *OneQueryClient) ListSources() ([]Source, error) {
+	payload, err := c.run("source", "list", "--page-all")
 	if err != nil {
 		return nil, err
 	}
 
-	payload = extractVelenData(payload)
+	payload = extractOneQueryData(payload)
 
 	var direct []Source
 	if err := json.Unmarshal(payload, &direct); err == nil {
@@ -74,16 +85,16 @@ func (c *VelenClient) ListSources() ([]Source, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("decode velen \"source list\" response")
+	return nil, fmt.Errorf("decode onequery \"source list\" response")
 }
 
-func (c *VelenClient) ShowSource(key string) (*Source, error) {
+func (c *OneQueryClient) ShowSource(key string) (*Source, error) {
 	payload, err := c.run("source", "show", key)
 	if err != nil {
 		return nil, err
 	}
 
-	payload = extractVelenData(payload)
+	payload = extractOneQueryData(payload)
 
 	result := &Source{}
 	if err := json.Unmarshal(payload, result); err == nil && result.SourceKey() != "" {
@@ -103,40 +114,40 @@ func (c *VelenClient) ShowSource(key string) (*Source, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("decode velen \"source show\" response")
+	return nil, fmt.Errorf("decode onequery \"source show\" response")
 }
 
-func (c *VelenClient) Query(sourceKey, sql string) (*QueryResult, error) {
+func (c *OneQueryClient) Query(sourceKey, sql string) (*QueryResult, error) {
 	result := &QueryResult{}
-	if err := c.runAndDecode(result, "query", "--source", sourceKey, "--sql", sql); err != nil {
+	if err := c.runAndDecode(result, "query", "exec", "--source", sourceKey, "--sql", sql, "--max-rows", "500"); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (c *VelenClient) runAndDecode(target any, args ...string) error {
+func (c *OneQueryClient) runAndDecode(target any, args ...string) error {
 	payload, err := c.run(args...)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(extractVelenData(payload), target); err != nil {
-		return fmt.Errorf("decode velen response: %w", err)
+	if err := json.Unmarshal(extractOneQueryData(payload), target); err != nil {
+		return fmt.Errorf("decode onequery response: %w", err)
 	}
 	return nil
 }
 
-func (c *VelenClient) run(args ...string) ([]byte, error) {
+func (c *OneQueryClient) run(args ...string) ([]byte, error) {
 	if c == nil {
-		return nil, fmt.Errorf("velen client is nil")
+		return nil, fmt.Errorf("onequery client is nil")
 	}
 
 	timeout := c.timeout
 	if timeout <= 0 {
-		timeout = defaultVelenTimeout
+		timeout = defaultOneQueryTimeout
 	}
 	binary := strings.TrimSpace(c.binary)
 	if binary == "" {
-		binary = "velen"
+		binary = "onequery"
 	}
 	runner := c.cmdFactory
 	if runner == nil {
@@ -146,7 +157,11 @@ func (c *VelenClient) run(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	commandArgs := append([]string{"--output", "json"}, args...)
+	commandArgs := []string{"--output", "json"}
+	if org := strings.TrimSpace(c.org); org != "" {
+		commandArgs = append(commandArgs, "--org", org)
+	}
+	commandArgs = append(commandArgs, args...)
 	cmd := runner(ctx, binary, commandArgs...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -155,24 +170,24 @@ func (c *VelenClient) run(args ...string) ([]byte, error) {
 
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, &VelenError{
+			return nil, &OneQueryError{
 				Code:    "timeout",
-				Message: fmt.Sprintf("velen command timed out after %s", timeout),
+				Message: fmt.Sprintf("onequery command timed out after %s", timeout),
 			}
 		}
 
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return nil, buildVelenError(exitErr.ExitCode(), stdout.String(), stderr.String())
+			return nil, buildOneQueryError(exitErr.ExitCode(), stdout.String(), stderr.String())
 		}
 
-		return nil, fmt.Errorf("run velen command: %w", err)
+		return nil, fmt.Errorf("run onequery command: %w", err)
 	}
 
 	return bytes.TrimSpace(stdout.Bytes()), nil
 }
 
-func extractVelenData(payload []byte) []byte {
+func extractOneQueryData(payload []byte) []byte {
 	trimmed := bytes.TrimSpace(payload)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return trimmed
@@ -190,14 +205,14 @@ func extractVelenData(payload []byte) []byte {
 	return bytes.TrimSpace(envelope.Data)
 }
 
-func buildVelenError(exitCode int, stdout string, stderr string) *VelenError {
-	if parsed := parseVelenError(stderr); parsed != nil {
+func buildOneQueryError(exitCode int, stdout string, stderr string) *OneQueryError {
+	if parsed := parseOneQueryError(stderr); parsed != nil {
 		if strings.TrimSpace(parsed.Code) == "" {
 			parsed.Code = fmt.Sprintf("exit_%d", exitCode)
 		}
 		return parsed
 	}
-	if parsed := parseVelenError(stdout); parsed != nil {
+	if parsed := parseOneQueryError(stdout); parsed != nil {
 		if strings.TrimSpace(parsed.Code) == "" {
 			parsed.Code = fmt.Sprintf("exit_%d", exitCode)
 		}
@@ -215,38 +230,48 @@ func buildVelenError(exitCode int, stdout string, stderr string) *VelenError {
 	}
 	message := strings.Join(parts, " | ")
 	if message == "" {
-		message = fmt.Sprintf("velen command failed with exit code %d", exitCode)
+		message = fmt.Sprintf("onequery command failed with exit code %d", exitCode)
 	}
 
-	return &VelenError{
+	return &OneQueryError{
 		Code:    fmt.Sprintf("exit_%d", exitCode),
 		Message: message,
 	}
 }
 
-func parseVelenError(payload string) *VelenError {
+func parseOneQueryError(payload string) *OneQueryError {
 	trimmed := strings.TrimSpace(payload)
 	if trimmed == "" {
 		return nil
 	}
 
-	var direct VelenError
+	var direct OneQueryError
 	if err := json.Unmarshal([]byte(trimmed), &direct); err == nil {
-		if strings.TrimSpace(direct.Code) != "" || strings.TrimSpace(direct.Message) != "" {
+		if oneQueryErrorHasText(&direct) {
 			return &direct
 		}
 	}
 
 	var wrapped struct {
-		Error *VelenError `json:"error"`
+		Error *OneQueryError `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(trimmed), &wrapped); err == nil {
 		if wrapped.Error != nil {
-			if strings.TrimSpace(wrapped.Error.Code) != "" || strings.TrimSpace(wrapped.Error.Message) != "" {
+			if oneQueryErrorHasText(wrapped.Error) {
 				return wrapped.Error
 			}
 		}
 	}
 
 	return nil
+}
+
+func oneQueryErrorHasText(err *OneQueryError) bool {
+	if err == nil {
+		return false
+	}
+	return strings.TrimSpace(err.Code) != "" ||
+		strings.TrimSpace(err.Message) != "" ||
+		strings.TrimSpace(err.Detail) != "" ||
+		strings.TrimSpace(err.Title) != ""
 }

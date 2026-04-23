@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-type checkSourcesFn func(ctx context.Context, client *VelenClient, cfg *Config) (*SourceCheckResult, error)
+type checkSourcesFn func(ctx context.Context, client *OneQueryClient, cfg *Config) (*SourceCheckResult, error)
 
-// SourceCheckHandler verifies required Velen sources before collection starts.
+// SourceCheckHandler verifies required OneQuery sources before collection starts.
 type SourceCheckHandler struct {
 	CheckSources checkSourcesFn
 }
@@ -39,7 +39,7 @@ func (h *SourceCheckHandler) Handle(ctx context.Context, runCtx *RunContext) (*T
 		checker = CheckSources
 	}
 
-	result, err := checker(ctx, runCtx.VelenClient, runCtx.Config)
+	result, err := checker(ctx, runCtx.OneQueryClient, runCtx.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func sourceCheckWaitMessage(result *SourceCheckResult) string {
 	}
 
 	return fmt.Sprintf(
-		"Required Velen sources are not ready: %s. Continue anyway? (y/n)",
+		"Required OneQuery sources are not ready: %s. Continue anyway? (y/n)",
 		strings.Join(result.Errors, "; "),
 	)
 }

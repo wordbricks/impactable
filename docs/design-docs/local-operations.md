@@ -20,6 +20,13 @@
 - `printf 'Summarize this repository.\n' | ./wtl run --output ndjson`
   - Stream structured lifecycle events for the run.
 
+### Git Impact
+
+- `./git-impact check-sources --output json`
+  - Validate the configured OneQuery org and source discovery without starting Codex.
+- `./git-impact analyze --output json --since 2026-01-01`
+  - Run the Git Impact Analyzer through the Codex app-server phase agent.
+
 ### Harness CLI
 
 - `cargo build --release --manifest-path harness/Cargo.toml`
@@ -61,6 +68,13 @@
 - `WTL_MODEL`
   - Overrides the model used for `wtl run`.
 
+### Git Impact
+
+- `GIT_IMPACT_CODEX_COMMAND`
+  - Overrides the command used to start Codex app-server for `git-impact analyze`.
+- `GIT_IMPACT_MODEL`
+  - Overrides the model used by the Git Impact Analyzer Codex app-server phase agent. If unset, `WTL_MODEL` is used as a fallback.
+
 ### Harness
 
 - `HARNESS_SMOKE_CMD`
@@ -81,5 +95,6 @@
 
 - If `./ralph-loop` cannot talk to Codex, confirm `codex app-server` works in your shell or set `RALPH_LOOP_CODEX_COMMAND`.
 - If `./wtl run` cannot talk to Codex, confirm `codex app-server` works in your shell or set `WTL_CODEX_COMMAND`.
+- If `./git-impact analyze` cannot start Codex, confirm `codex app-server` works in your shell or set `GIT_IMPACT_CODEX_COMMAND`.
 - If `harnesscli boot start` reports a busy port, rerun with `DISCODE_APP_PORT` or stop the conflicting process.
 - If automation output looks human-oriented in scripts, pass `--output json` explicitly even though non-TTY defaults should already select JSON.

@@ -126,7 +126,7 @@ func TestScoreHandlerHandle_EmptyAnalyticsSchemaGracefulDegradation(t *testing.T
 	schemaCalls := 0
 	metricCalls := 0
 	handler := &ScoreHandler{
-		Query: func(_ *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
+		Query: func(_ *OneQueryClient, sourceKey string, sql string) (*QueryResult, error) {
 			if sourceKey != "analytics-main" {
 				t.Fatalf("unexpected source key %q", sourceKey)
 			}
@@ -141,10 +141,10 @@ func TestScoreHandlerHandle_EmptyAnalyticsSchemaGracefulDegradation(t *testing.T
 
 	deployedAt := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
 	runCtx := &RunContext{
-		VelenClient: &VelenClient{},
+		OneQueryClient: &OneQueryClient{},
 		Config: &Config{
-			Velen: VelenConfig{
-				Sources: VelenSources{Analytics: "analytics-main"},
+			OneQuery: OneQueryConfig{
+				Sources: OneQuerySources{Analytics: "analytics-main"},
 			},
 		},
 		CollectedData: &CollectedData{

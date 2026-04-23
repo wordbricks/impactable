@@ -86,9 +86,9 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 			}
 
 			runCtx := &gitimpact.RunContext{
-				Config:      &cfg,
-				AnalysisCtx: analysisCtx,
-				VelenClient: gitimpact.NewVelenClient(0),
+				Config:         &cfg,
+				AnalysisCtx:    analysisCtx,
+				OneQueryClient: gitimpact.NewOneQueryClient(0),
 			}
 
 			interactiveTUI := state.output == "text" && isTerminalWriter(stdout)
@@ -107,7 +107,13 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 			if isTerminalReader(stdin) {
 				waitHandler = newPromptWaitHandler(stdin, stdout, nil)
 			}
-			engine := gitimpact.NewDefaultEngine(runCtx.VelenClient, nil, waitHandler)
+			engine, cleanup, err := newAnalysisEngine(runCtx, nil, waitHandler)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				_ = cleanup()
+			}()
 			result, err := engine.Run(cmd.Context(), runCtx)
 			if err != nil {
 				return err
@@ -133,7 +139,7 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 
 	checkSourcesCmd := &cobra.Command{
 		Use:   "check-sources",
-		Short: "Validate configured Velen sources",
+		Short: "Validate configured OneQuery sources",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			analysisCtx, err := gitimpact.NewAnalysisContext("", 0, "", state.configPath)
 			if err != nil {
@@ -145,7 +151,7 @@ func newRootCommand(stdin io.Reader, stdout io.Writer, stderr io.Writer) (*cobra
 				return err
 			}
 
-			result, err := gitimpact.CheckSources(cmd.Context(), gitimpact.NewVelenClient(0), &cfg)
+			result, err := gitimpact.CheckSources(cmd.Context(), gitimpact.NewOneQueryClient(0), &cfg)
 			if err != nil {
 				return err
 			}
@@ -163,6 +169,18 @@ func normalizeAnalyzeFlagName(_ *pflag.FlagSet, name string) pflag.NormalizedNam
 		return pflag.NormalizedName("pr")
 	}
 	return pflag.NormalizedName(name)
+}
+
+func newAnalysisEngine(runCtx *gitimpact.RunContext, observer gitimpact.Observer, waitHandler gitimpact.WaitHandler) (*gitimpact.Engine, func() error, error) {
+	cwd := ""
+	if runCtx != nil && runCtx.AnalysisCtx != nil {
+		cwd = runCtx.AnalysisCtx.WorkingDirectory
+	}
+	agent, err := gitimpact.NewCodexAgentRuntime(gitimpact.CodexAgentConfig{CWD: cwd})
+	if err != nil {
+		return nil, nil, err
+	}
+	return gitimpact.NewAgentEngine(agent, observer, waitHandler), agent.Close, nil
 }
 
 func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, runCtx *gitimpact.RunContext) (*gitimpact.AnalysisResult, error) {
@@ -194,7 +212,15 @@ func runAnalyzeWithTUI(ctx context.Context, stdin io.Reader, stdout io.Writer, r
 	if isTerminalReader(stdin) {
 		waitHandler = newPromptWaitHandler(stdin, stdout, program)
 	}
-	engine := gitimpact.NewDefaultEngine(runCtx.VelenClient, observer, waitHandler)
+	engine, cleanup, err := newAnalysisEngine(runCtx, observer, waitHandler)
+	if err != nil {
+		program.Kill()
+		<-runDone
+		return nil, err
+	}
+	defer func() {
+		_ = cleanup()
+	}()
 
 	result, runErr := engine.Run(ctx, runCtx)
 	progressProgram := <-runDone

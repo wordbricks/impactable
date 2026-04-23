@@ -32,6 +32,34 @@ type notification struct {
 	Params map[string]any
 }
 
+// AppServerConfig configures a reusable Codex app-server client.
+type AppServerConfig struct {
+	CWD            string
+	Model          string
+	ServiceName    string
+	ClientName     string
+	ClientTitle    string
+	ClientVersion  string
+	ApprovalPolicy string
+	Sandbox        string
+	CommandEnv     string
+}
+
+// AppServerTurnResult is the completed result of one app-server turn.
+type AppServerTurnResult struct {
+	TurnID       string
+	Status       string
+	Response     string
+	ErrorMessage string
+}
+
+// AppServerClient exposes the Codex app-server thread/turn primitive for
+// product-specific WTL integrations outside the standalone wtl CLI.
+type AppServerClient struct {
+	runner *appServerRunner
+	cfg    runConfig
+}
+
 type appServerRunner struct {
 	cfg           runConfig
 	cmd           *exec.Cmd
@@ -46,8 +74,63 @@ type appServerRunner struct {
 	closeOnce     sync.Once
 }
 
-func newAppServerRunner(cfg runConfig) (turnRunner, error) {
-	commandText := strings.TrimSpace(os.Getenv("WTL_CODEX_COMMAND"))
+// NewAppServerClient starts a Codex app-server process and returns a reusable
+// client. Call Close when the owning run finishes.
+func NewAppServerClient(cfg AppServerConfig) (*AppServerClient, error) {
+	runCfg := runConfig{
+		CWD:            cfg.CWD,
+		Model:          cfg.Model,
+		ServiceName:    cfg.ServiceName,
+		ClientName:     cfg.ClientName,
+		ClientTitle:    cfg.ClientTitle,
+		ClientVersion:  cfg.ClientVersion,
+		ApprovalPolicy: cfg.ApprovalPolicy,
+		Sandbox:        cfg.Sandbox,
+		CommandEnv:     cfg.CommandEnv,
+	}
+	runner, err := newAppServerRunner(runCfg)
+	if err != nil {
+		return nil, err
+	}
+	return &AppServerClient{runner: runner, cfg: runCfg}, nil
+}
+
+// StartThread starts a Codex thread for this client configuration.
+func (c *AppServerClient) StartThread(ctx context.Context) (string, error) {
+	if c == nil || c.runner == nil {
+		return "", fmt.Errorf("app-server client is nil")
+	}
+	return c.runner.Start(ctx, c.cfg)
+}
+
+// RunTurn runs one raw prompt in an existing Codex thread.
+func (c *AppServerClient) RunTurn(ctx context.Context, threadID string, prompt string, onDelta func(string)) (AppServerTurnResult, error) {
+	if c == nil || c.runner == nil {
+		return AppServerTurnResult{}, fmt.Errorf("app-server client is nil")
+	}
+	result, err := c.runner.runTurn(ctx, threadID, prompt, onDelta)
+	return AppServerTurnResult{
+		TurnID:       result.TurnID,
+		Status:       result.Status,
+		Response:     result.Response,
+		ErrorMessage: result.ErrorMessage,
+	}, err
+}
+
+// Close terminates the underlying app-server process.
+func (c *AppServerClient) Close() error {
+	if c == nil || c.runner == nil {
+		return nil
+	}
+	return c.runner.Close()
+}
+
+func newAppServerRunner(cfg runConfig) (*appServerRunner, error) {
+	commandEnv := strings.TrimSpace(cfg.CommandEnv)
+	if commandEnv == "" {
+		commandEnv = "WTL_CODEX_COMMAND"
+	}
+	commandText := strings.TrimSpace(os.Getenv(commandEnv))
 	parts := strings.Fields(commandText)
 	if len(parts) == 0 {
 		parts = []string{"codex", "app-server"}
@@ -88,11 +171,7 @@ func newAppServerRunner(cfg runConfig) (turnRunner, error) {
 func (r *appServerRunner) Start(ctx context.Context, cfg runConfig) (string, error) {
 	if !r.initialized {
 		if _, err := r.request(ctx, "initialize", map[string]any{
-			"clientInfo": map[string]any{
-				"name":    "wtl",
-				"title":   "WhatTheLoop CLI",
-				"version": "0.1.0",
-			},
+			"clientInfo": clientInfoParams(cfg),
 		}); err != nil {
 			return "", err
 		}
@@ -119,16 +198,52 @@ func (r *appServerRunner) Start(ctx context.Context, cfg runConfig) (string, err
 }
 
 func threadStartParams(cfg runConfig) map[string]any {
+	approvalPolicy := strings.TrimSpace(cfg.ApprovalPolicy)
+	if approvalPolicy == "" {
+		approvalPolicy = defaultApprovalPolicy
+	}
+	sandbox := strings.TrimSpace(cfg.Sandbox)
+	if sandbox == "" {
+		sandbox = defaultSandbox
+	}
+	serviceName := strings.TrimSpace(cfg.ServiceName)
+	if serviceName == "" {
+		serviceName = "wtl"
+	}
 	return map[string]any{
 		"model":          cfg.Model,
 		"cwd":            cfg.CWD,
-		"approvalPolicy": defaultApprovalPolicy,
-		"sandbox":        defaultSandbox,
-		"serviceName":    "wtl",
+		"approvalPolicy": approvalPolicy,
+		"sandbox":        sandbox,
+		"serviceName":    serviceName,
+	}
+}
+
+func clientInfoParams(cfg runConfig) map[string]any {
+	name := strings.TrimSpace(cfg.ClientName)
+	if name == "" {
+		name = "wtl"
+	}
+	title := strings.TrimSpace(cfg.ClientTitle)
+	if title == "" {
+		title = "WhatTheLoop CLI"
+	}
+	version := strings.TrimSpace(cfg.ClientVersion)
+	if version == "" {
+		version = "0.1.0"
+	}
+	return map[string]any{
+		"name":    name,
+		"title":   title,
+		"version": version,
 	}
 }
 
 func (r *appServerRunner) RunTurn(ctx context.Context, threadID string, prompt string, onDelta func(string)) (turnResult, error) {
+	return r.runTurn(ctx, threadID, buildTurnPrompt(prompt), onDelta)
+}
+
+func (r *appServerRunner) runTurn(ctx context.Context, threadID string, prompt string, onDelta func(string)) (turnResult, error) {
 	turnID, err := r.startTurn(ctx, threadID, prompt)
 	if err != nil {
 		return turnResult{}, err
@@ -220,7 +335,7 @@ func (r *appServerRunner) startTurn(ctx context.Context, threadID string, prompt
 		"threadId": threadID,
 		"input": []map[string]any{{
 			"type": "text",
-			"text": buildTurnPrompt(prompt),
+			"text": prompt,
 		}},
 	})
 	if err != nil {

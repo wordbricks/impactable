@@ -11,7 +11,7 @@ func TestLoadConfig_AppliesDefaults(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "impact-analyzer.yaml")
-	content := `velen:
+	content := `onequery:
   org: my-company
   sources:
     github: github-main
@@ -31,14 +31,14 @@ feature_grouping:
 		t.Fatalf("LoadConfig returned error: %v", err)
 	}
 
-	if cfg.Velen.Org != "my-company" {
-		t.Fatalf("expected org my-company, got %q", cfg.Velen.Org)
+	if cfg.OneQuery.Org != "my-company" {
+		t.Fatalf("expected org my-company, got %q", cfg.OneQuery.Org)
 	}
-	if cfg.Velen.Sources.GitHub != "github-main" {
-		t.Fatalf("expected github source github-main, got %q", cfg.Velen.Sources.GitHub)
+	if cfg.OneQuery.Sources.GitHub != "github-main" {
+		t.Fatalf("expected github source github-main, got %q", cfg.OneQuery.Sources.GitHub)
 	}
-	if cfg.Velen.Sources.Analytics != "amplitude-prod" {
-		t.Fatalf("expected analytics source amplitude-prod, got %q", cfg.Velen.Sources.Analytics)
+	if cfg.OneQuery.Sources.Analytics != "amplitude-prod" {
+		t.Fatalf("expected analytics source amplitude-prod, got %q", cfg.OneQuery.Sources.Analytics)
 	}
 	if cfg.Analysis.BeforeWindowDays != DefaultBeforeWindowDays {
 		t.Fatalf("expected before window default %d, got %d", DefaultBeforeWindowDays, cfg.Analysis.BeforeWindowDays)
@@ -56,7 +56,7 @@ func TestLoadConfig_UsesExplicitAnalysisValues(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "impact-analyzer.yaml")
-	content := `velen:
+	content := `onequery:
   org: my-company
   sources:
     github: github-main

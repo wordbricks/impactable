@@ -52,10 +52,10 @@ func TestCheckSources_TableDriven(t *testing.T) {
 			wantNoErrorSubstrings: []string{"not found", "does not support QUERY"},
 		},
 		{
-			name: "provider and query fields match current velen payloads",
+			name: "provider and query fields match current onequery payloads",
 			cfg: Config{
-				Velen: VelenConfig{
-					Sources: VelenSources{
+				OneQuery: OneQueryConfig{
+					Sources: OneQuerySources{
 						GitHub:    "github-main",
 						Analytics: "amplitude-prod",
 					},
@@ -75,8 +75,8 @@ func TestCheckSources_TableDriven(t *testing.T) {
 		{
 			name: "fallback to configured keys when provider types do not match",
 			cfg: Config{
-				Velen: VelenConfig{
-					Sources: VelenSources{
+				OneQuery: OneQueryConfig{
+					Sources: OneQuerySources{
 						GitHub:    "gh-fallback",
 						Analytics: "analytics-fallback",
 					},
@@ -96,8 +96,8 @@ func TestCheckSources_TableDriven(t *testing.T) {
 		{
 			name: "missing required sources surfaces errors",
 			cfg: Config{
-				Velen: VelenConfig{
-					Sources: VelenSources{
+				OneQuery: OneQueryConfig{
+					Sources: OneQuerySources{
 						GitHub:    "missing-github",
 						Analytics: "missing-analytics",
 					},
@@ -150,11 +150,11 @@ func TestCheckSources_TableDriven(t *testing.T) {
 			if result.OrgName != tt.wantOrgName {
 				t.Fatalf("unexpected org name: got %q, want %q", result.OrgName, tt.wantOrgName)
 			}
-			if tt.wantGitHubKey != "" && tt.cfg.Velen.Sources.GitHub != "" && tt.cfg.Velen.Sources.GitHub != tt.wantGitHubKey {
-				t.Fatalf("expected config github source to be updated to %q, got %q", tt.wantGitHubKey, tt.cfg.Velen.Sources.GitHub)
+			if tt.wantGitHubKey != "" && tt.cfg.OneQuery.Sources.GitHub != "" && tt.cfg.OneQuery.Sources.GitHub != tt.wantGitHubKey {
+				t.Fatalf("expected config github source to be updated to %q, got %q", tt.wantGitHubKey, tt.cfg.OneQuery.Sources.GitHub)
 			}
-			if tt.wantAnalyticsKey != "" && tt.cfg.Velen.Sources.Analytics != "" && tt.cfg.Velen.Sources.Analytics != tt.wantAnalyticsKey {
-				t.Fatalf("expected config analytics source to be updated to %q, got %q", tt.wantAnalyticsKey, tt.cfg.Velen.Sources.Analytics)
+			if tt.wantAnalyticsKey != "" && tt.cfg.OneQuery.Sources.Analytics != "" && tt.cfg.OneQuery.Sources.Analytics != tt.wantAnalyticsKey {
+				t.Fatalf("expected config analytics source to be updated to %q, got %q", tt.wantAnalyticsKey, tt.cfg.OneQuery.Sources.Analytics)
 			}
 
 			for _, expected := range tt.wantErrorContains {
@@ -177,7 +177,7 @@ func TestCheckSources_ReturnsCommandErrors(t *testing.T) {
 	t.Parallel()
 
 	client := newCheckSourcesHelperClient(t, checkSourcesHelperPayload{
-		FailCommand: "velen org current",
+		FailCommand: "onequery org current",
 		FailMessage: "boom",
 	})
 
@@ -185,7 +185,7 @@ func TestCheckSources_ReturnsCommandErrors(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected command failure error")
 	}
-	if !strings.Contains(err.Error(), "velen org current") {
+	if !strings.Contains(err.Error(), "onequery org current") {
 		t.Fatalf("expected wrapped org current error, got %q", err.Error())
 	}
 }
@@ -198,7 +198,7 @@ type checkSourcesHelperPayload struct {
 	FailMessage string
 }
 
-func newCheckSourcesHelperClient(t *testing.T, payload checkSourcesHelperPayload) *VelenClient {
+func newCheckSourcesHelperClient(t *testing.T, payload checkSourcesHelperPayload) *OneQueryClient {
 	t.Helper()
 
 	payloadBytes, err := json.Marshal(payload)
@@ -206,7 +206,7 @@ func newCheckSourcesHelperClient(t *testing.T, payload checkSourcesHelperPayload
 		t.Fatalf("marshal helper payload: %v", err)
 	}
 
-	client := NewVelenClient(time.Second)
+	client := NewOneQueryClient(time.Second)
 	client.cmdFactory = func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		helperArgs := []string{"-test.run=TestCheckSourcesHelperProcess", "--", name}
 		helperArgs = append(helperArgs, args...)
@@ -250,6 +250,9 @@ func TestCheckSourcesHelperProcess(t *testing.T) {
 			idx++
 			continue
 		}
+		if args[idx] == "--page-all" {
+			continue
+		}
 		filteredArgs = append(filteredArgs, args[idx])
 	}
 
@@ -260,13 +263,13 @@ func TestCheckSourcesHelperProcess(t *testing.T) {
 	}
 
 	switch cmdText {
-	case "velen auth whoami":
+	case "onequery auth whoami":
 		_ = json.NewEncoder(os.Stdout).Encode(payload.WhoAmI)
 		os.Exit(0)
-	case "velen org current":
+	case "onequery org current":
 		_ = json.NewEncoder(os.Stdout).Encode(payload.Org)
 		os.Exit(0)
-	case "velen source list":
+	case "onequery source list":
 		_ = json.NewEncoder(os.Stdout).Encode(payload.Sources)
 		os.Exit(0)
 	default:

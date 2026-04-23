@@ -1,23 +1,24 @@
 package gitimpact
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
 
 // Config captures the impact-analyzer.yaml schema.
 type Config struct {
-	Velen           VelenConfig           `mapstructure:"velen"`
+	OneQuery        OneQueryConfig        `mapstructure:"onequery"`
 	Analysis        AnalysisConfig        `mapstructure:"analysis"`
 	FeatureGrouping FeatureGroupingConfig `mapstructure:"feature_grouping"`
 }
 
-type VelenConfig struct {
-	Org     string       `mapstructure:"org"`
-	Sources VelenSources `mapstructure:"sources"`
+type OneQueryConfig struct {
+	Org     string          `mapstructure:"org"`
+	Sources OneQuerySources `mapstructure:"sources"`
 }
 
-type VelenSources struct {
+type OneQuerySources struct {
 	GitHub    string `mapstructure:"github"`
 	Analytics string `mapstructure:"analytics"`
 }
@@ -92,11 +93,34 @@ type AnalysisResult struct {
 	PRImpacts     []PRImpact
 }
 
-// Velen types
+// OneQuery types
 
 type WhoAmIResult struct {
 	Email string `json:"email"`
 	Org   string `json:"org"`
+}
+
+func (r *WhoAmIResult) UnmarshalJSON(payload []byte) error {
+	var raw struct {
+		Email        string `json:"email"`
+		Org          string `json:"org"`
+		EffectiveOrg string `json:"effectiveOrg"`
+		User         struct {
+			Email string `json:"email"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return err
+	}
+	r.Email = strings.TrimSpace(raw.Email)
+	if r.Email == "" {
+		r.Email = strings.TrimSpace(raw.User.Email)
+	}
+	r.Org = strings.TrimSpace(raw.Org)
+	if r.Org == "" {
+		r.Org = strings.TrimSpace(raw.EffectiveOrg)
+	}
+	return nil
 }
 
 type OrgResult struct {
@@ -106,20 +130,29 @@ type OrgResult struct {
 }
 
 type Source struct {
-	Key          string   `json:"key"`
-	Name         string   `json:"name"`
-	ProviderType string   `json:"provider_type"`
-	Provider     string   `json:"provider"`
-	Capabilities []string `json:"capabilities"`
-	Query        any      `json:"query"`
-	Status       string   `json:"status"`
+	Key            string   `json:"key"`
+	SourceKeyValue string   `json:"sourceKey"`
+	Name           string   `json:"name"`
+	DisplayName    string   `json:"displayName"`
+	ProviderType   string   `json:"provider_type"`
+	Provider       string   `json:"provider"`
+	Capabilities   []string `json:"capabilities"`
+	Query          any      `json:"query"`
+	Queryable      bool     `json:"queryable"`
+	Status         string   `json:"status"`
 }
 
 func (s Source) SourceKey() string {
 	if trimmed := strings.TrimSpace(s.Key); trimmed != "" {
 		return trimmed
 	}
-	return strings.TrimSpace(s.Name)
+	if trimmed := strings.TrimSpace(s.SourceKeyValue); trimmed != "" {
+		return trimmed
+	}
+	if trimmed := strings.TrimSpace(s.Name); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(s.DisplayName)
 }
 
 func (s Source) ProviderLabel() string {
@@ -135,22 +168,89 @@ type QueryResult struct {
 	RowCount int             `json:"row_count"`
 }
 
-type VelenError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+func (r *QueryResult) UnmarshalJSON(payload []byte) error {
+	var raw struct {
+		Columns       []json.RawMessage `json:"columns"`
+		Rows          []json.RawMessage `json:"rows"`
+		RowCount      *int              `json:"row_count"`
+		RowCountCamel *int              `json:"rowCount"`
+	}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return err
+	}
+
+	columns := make([]string, 0, len(raw.Columns))
+	for _, item := range raw.Columns {
+		var column string
+		if err := json.Unmarshal(item, &column); err == nil {
+			columns = append(columns, column)
+			continue
+		}
+
+		var objectColumn struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(item, &objectColumn); err != nil {
+			return err
+		}
+		columns = append(columns, objectColumn.Name)
+	}
+
+	rows := make([][]interface{}, 0, len(raw.Rows))
+	for _, item := range raw.Rows {
+		var row []interface{}
+		if err := json.Unmarshal(item, &row); err == nil {
+			rows = append(rows, row)
+			continue
+		}
+
+		var objectRow struct {
+			Values []interface{} `json:"values"`
+		}
+		if err := json.Unmarshal(item, &objectRow); err != nil {
+			return err
+		}
+		rows = append(rows, objectRow.Values)
+	}
+
+	rowCount := len(rows)
+	if raw.RowCount != nil {
+		rowCount = *raw.RowCount
+	} else if raw.RowCountCamel != nil {
+		rowCount = *raw.RowCountCamel
+	}
+
+	r.Columns = columns
+	r.Rows = rows
+	r.RowCount = rowCount
+	return nil
 }
 
-func (e *VelenError) Error() string {
+type OneQueryError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Detail  string `json:"detail"`
+	Title   string `json:"title"`
+}
+
+func (e *OneQueryError) Error() string {
 	if e == nil {
 		return ""
 	}
-	if strings.TrimSpace(e.Code) == "" {
-		return e.Message
+	message := e.Message
+	if strings.TrimSpace(message) == "" {
+		message = e.Detail
 	}
-	if strings.TrimSpace(e.Message) == "" {
+	if strings.TrimSpace(message) == "" {
+		message = e.Title
+	}
+	if strings.TrimSpace(e.Code) == "" {
+		return message
+	}
+	if strings.TrimSpace(message) == "" {
 		return e.Code
 	}
-	return e.Code + ": " + e.Message
+	return e.Code + ": " + message
 }
 
 // Release represents a GitHub release.

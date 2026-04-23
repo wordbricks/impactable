@@ -32,7 +32,7 @@ func DefaultHandlers() map[Phase]PhaseHandler {
 }
 
 // NewDefaultEngine builds an engine with all default phase handlers configured.
-func NewDefaultEngine(client *VelenClient, observer Observer, waitHandler WaitHandler) *Engine {
+func NewDefaultEngine(client *OneQueryClient, observer Observer, waitHandler WaitHandler) *Engine {
 	_ = client
 	return &Engine{
 		Handlers:    DefaultHandlers(),

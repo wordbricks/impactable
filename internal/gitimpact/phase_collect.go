@@ -14,9 +14,9 @@ const (
 	defaultSinceDate  = "1970-01-01"
 )
 
-type collectQueryFn func(client *VelenClient, sourceKey string, sql string) (*QueryResult, error)
+type collectQueryFn func(client *OneQueryClient, sourceKey string, sql string) (*QueryResult, error)
 
-// CollectHandler fetches GitHub PR, tag, and release metadata through Velen.
+// CollectHandler fetches GitHub PR, tag, and release metadata through OneQuery.
 type CollectHandler struct {
 	Query collectQueryFn
 }
@@ -25,13 +25,14 @@ func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnRes
 	if runCtx == nil {
 		return nil, fmt.Errorf("run context is required")
 	}
-	if runCtx.VelenClient == nil {
-		return nil, fmt.Errorf("velen client is required")
+	if runCtx.OneQueryClient == nil {
+		return nil, fmt.Errorf("onequery client is required")
 	}
+	client := oneQueryClientForConfig(runCtx.OneQueryClient, runCtx.Config)
 
 	sourceKey := ""
 	if runCtx.Config != nil {
-		sourceKey = strings.TrimSpace(runCtx.Config.Velen.Sources.GitHub)
+		sourceKey = strings.TrimSpace(runCtx.Config.OneQuery.Sources.GitHub)
 	}
 	if sourceKey == "" {
 		return nil, fmt.Errorf("github source key is required")
@@ -39,7 +40,7 @@ func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnRes
 
 	query := h.Query
 	if query == nil {
-		query = func(client *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
+		query = func(client *OneQueryClient, sourceKey string, sql string) (*QueryResult, error) {
 			return client.Query(sourceKey, sql)
 		}
 	}
@@ -53,7 +54,7 @@ func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnRes
 		"SELECT number, title, author, merged_at, head_branch, labels FROM pull_requests WHERE merged_at > '%s' ORDER BY merged_at DESC LIMIT 100",
 		since,
 	)
-	prResult, err := query(runCtx.VelenClient, sourceKey, prSQL)
+	prResult, err := query(client, sourceKey, prSQL)
 	if err != nil {
 		return nil, fmt.Errorf("collect prs: %w", err)
 	}
@@ -63,7 +64,7 @@ func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnRes
 	}
 
 	tagSQL := "SELECT name, created_at FROM tags ORDER BY created_at DESC LIMIT 50"
-	tagResult, err := query(runCtx.VelenClient, sourceKey, tagSQL)
+	tagResult, err := query(client, sourceKey, tagSQL)
 	if err != nil {
 		return nil, fmt.Errorf("collect tags: %w", err)
 	}
@@ -73,7 +74,7 @@ func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnRes
 	}
 
 	releaseSQL := "SELECT name, tag_name, published_at FROM releases ORDER BY published_at DESC LIMIT 20"
-	releaseResult, err := query(runCtx.VelenClient, sourceKey, releaseSQL)
+	releaseResult, err := query(client, sourceKey, releaseSQL)
 	if err != nil {
 		return nil, fmt.Errorf("collect releases: %w", err)
 	}

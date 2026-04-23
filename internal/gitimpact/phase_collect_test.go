@@ -19,7 +19,7 @@ func TestCollectHandlerHandle_Success(t *testing.T) {
 
 	seenSQL := make([]string, 0, 3)
 	handler := &CollectHandler{
-		Query: func(_ *VelenClient, sourceKey string, sql string) (*QueryResult, error) {
+		Query: func(_ *OneQueryClient, sourceKey string, sql string) (*QueryResult, error) {
 			if sourceKey != "github-main" {
 				return nil, errors.New("unexpected source key")
 			}
@@ -51,10 +51,10 @@ func TestCollectHandlerHandle_Success(t *testing.T) {
 	}
 
 	runCtx := &RunContext{
-		VelenClient: &VelenClient{},
+		OneQueryClient: &OneQueryClient{},
 		Config: &Config{
-			Velen: VelenConfig{
-				Sources: VelenSources{GitHub: "github-main"},
+			OneQuery: OneQueryConfig{
+				Sources: OneQuerySources{GitHub: "github-main"},
 			},
 		},
 		AnalysisCtx: &AnalysisContext{Since: &since},
@@ -95,8 +95,8 @@ func TestCollectHandlerHandle_RequiresGitHubSourceKey(t *testing.T) {
 
 	handler := &CollectHandler{}
 	_, err := handler.Handle(context.Background(), &RunContext{
-		VelenClient: &VelenClient{},
-		Config:      &Config{},
+		OneQueryClient: &OneQueryClient{},
+		Config:         &Config{},
 	})
 	if err == nil {
 		t.Fatal("expected error when github source key is missing")
@@ -110,15 +110,15 @@ func TestCollectHandlerHandle_PropagatesQueryError(t *testing.T) {
 	t.Parallel()
 
 	handler := &CollectHandler{
-		Query: func(*VelenClient, string, string) (*QueryResult, error) {
+		Query: func(*OneQueryClient, string, string) (*QueryResult, error) {
 			return nil, errors.New("query failed")
 		},
 	}
 	_, err := handler.Handle(context.Background(), &RunContext{
-		VelenClient: &VelenClient{},
+		OneQueryClient: &OneQueryClient{},
 		Config: &Config{
-			Velen: VelenConfig{
-				Sources: VelenSources{GitHub: "github-main"},
+			OneQuery: OneQueryConfig{
+				Sources: OneQuerySources{GitHub: "github-main"},
 			},
 		},
 	})
@@ -136,7 +136,7 @@ func TestCollectHandlerHandle_InvalidPRRowsReturnError(t *testing.T) {
 	prSQL := "SELECT number, title, author, merged_at, head_branch, labels FROM pull_requests WHERE merged_at > '1970-01-01' ORDER BY merged_at DESC LIMIT 100"
 
 	handler := &CollectHandler{
-		Query: func(_ *VelenClient, _ string, sql string) (*QueryResult, error) {
+		Query: func(_ *OneQueryClient, _ string, sql string) (*QueryResult, error) {
 			if sql == prSQL {
 				return &QueryResult{
 					Rows: [][]interface{}{
@@ -149,10 +149,10 @@ func TestCollectHandlerHandle_InvalidPRRowsReturnError(t *testing.T) {
 	}
 
 	_, err := handler.Handle(context.Background(), &RunContext{
-		VelenClient: &VelenClient{},
+		OneQueryClient: &OneQueryClient{},
 		Config: &Config{
-			Velen: VelenConfig{
-				Sources: VelenSources{GitHub: "github-main"},
+			OneQuery: OneQueryConfig{
+				Sources: OneQuerySources{GitHub: "github-main"},
 			},
 		},
 	})

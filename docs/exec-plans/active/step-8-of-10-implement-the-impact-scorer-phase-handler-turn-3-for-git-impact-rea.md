@@ -25,7 +25,7 @@ Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are eva
 - Impact Scorer implementation and tests are not started.
 
 ## Key decisions
-- Reuse existing `VelenClient.Query` integration pattern from prior phase handlers for deterministic testability.
+- Reuse existing `OneQueryClient.Query` integration pattern from prior phase handlers for deterministic testability.
 - Keep default windows aligned with config defaults and spec defaults (7 days each when unset).
 - Treat deployment overlap density as the primary confidence baseline and surface overlap details in reasoning text.
 

@@ -45,7 +45,7 @@ func writeTestConfig(t *testing.T, dir string) string {
 	t.Helper()
 
 	path := filepath.Join(dir, DefaultConfigFile)
-	content := `velen:
+	content := `onequery:
   org: my-company
   sources:
     github: github-main

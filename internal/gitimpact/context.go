@@ -73,16 +73,16 @@ func BuildInitialPrompt(ctx *AnalysisContext, cfg *Config) string {
 		featureScope = strings.TrimSpace(ctx.Feature)
 	}
 
-	githubSource := strings.TrimSpace(cfg.Velen.Sources.GitHub)
+	githubSource := strings.TrimSpace(cfg.OneQuery.Sources.GitHub)
 	if githubSource == "" {
 		githubSource = "not configured"
 	}
-	analyticsSource := strings.TrimSpace(cfg.Velen.Sources.Analytics)
+	analyticsSource := strings.TrimSpace(cfg.OneQuery.Sources.Analytics)
 	if analyticsSource == "" {
 		analyticsSource = "not configured"
 	}
 
-	org := strings.TrimSpace(cfg.Velen.Org)
+	org := strings.TrimSpace(cfg.OneQuery.Org)
 	if org == "" {
 		org = "not configured"
 	}
@@ -97,7 +97,7 @@ Task context:
 - scope_pr: %s
 - scope_feature: %s
 
-Configured Velen context:
+Configured OneQuery context:
 - org: %s
 - github_source_key: %s
 - analytics_source_key: %s
