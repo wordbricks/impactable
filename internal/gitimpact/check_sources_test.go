@@ -246,6 +246,9 @@ func TestCheckSourcesHelperProcess(t *testing.T) {
 	args := os.Args[separator+1:]
 	filteredArgs := make([]string, 0, len(args))
 	for idx := 0; idx < len(args); idx++ {
+		if args[idx] == "--json" {
+			continue
+		}
 		if args[idx] == "--output" && idx+1 < len(args) {
 			idx++
 			continue

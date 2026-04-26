@@ -157,7 +157,7 @@ func (c *OneQueryClient) run(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	commandArgs := []string{"--output", "json"}
+	commandArgs := []string{"--json"}
 	if org := strings.TrimSpace(c.org); org != "" {
 		commandArgs = append(commandArgs, "--org", org)
 	}

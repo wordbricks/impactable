@@ -35,7 +35,7 @@ func TestWhoAmISuccess(t *testing.T) {
 		t.Fatalf("unexpected whoami result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "auth", "whoami"})
+	expectArgs(t, argsFile, []string{"onequery", "--json", "auth", "whoami"})
 }
 
 func TestCurrentOrgSuccess(t *testing.T) {
@@ -50,7 +50,7 @@ func TestCurrentOrgSuccess(t *testing.T) {
 		t.Fatalf("unexpected org result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "org", "current"})
+	expectArgs(t, argsFile, []string{"onequery", "--json", "org", "current"})
 }
 
 func TestListSourcesSuccess(t *testing.T) {
@@ -68,7 +68,7 @@ func TestListSourcesSuccess(t *testing.T) {
 		t.Fatalf("unexpected source result: %+v", result[0])
 	}
 
-	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "source", "list", "--page-all"})
+	expectArgs(t, argsFile, []string{"onequery", "--json", "source", "list", "--page-all"})
 }
 
 func TestShowSourceSuccess(t *testing.T) {
@@ -83,7 +83,7 @@ func TestShowSourceSuccess(t *testing.T) {
 		t.Fatalf("unexpected source result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "source", "show", "amplitude-prod"})
+	expectArgs(t, argsFile, []string{"onequery", "--json", "source", "show", "amplitude-prod"})
 }
 
 func TestQuerySuccessAndSafeArgs(t *testing.T) {
@@ -99,7 +99,7 @@ func TestQuerySuccessAndSafeArgs(t *testing.T) {
 		t.Fatalf("unexpected query result: %+v", result)
 	}
 
-	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "query", "exec", "--source", "github-main", "--sql", sql, "--max-rows", "500"})
+	expectArgs(t, argsFile, []string{"onequery", "--json", "query", "exec", "--source", "github-main", "--sql", sql, "--max-rows", "500"})
 }
 
 func TestClientWithOrgPassesOrgGlobalOption(t *testing.T) {
@@ -110,7 +110,7 @@ func TestClientWithOrgPassesOrgGlobalOption(t *testing.T) {
 		t.Fatalf("ListSources returned error: %v", err)
 	}
 
-	expectArgs(t, argsFile, []string{"onequery", "--output", "json", "--org", "impactable", "source", "list", "--page-all"})
+	expectArgs(t, argsFile, []string{"onequery", "--json", "--org", "impactable", "source", "list", "--page-all"})
 }
 
 func TestCurrentOrgEnvelopeSuccess(t *testing.T) {
