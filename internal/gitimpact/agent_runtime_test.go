@@ -302,4 +302,12 @@ func TestAgentHandlersIncludesAllPhases(t *testing.T) {
 			t.Fatalf("missing agent handler for phase %q", phase)
 		}
 	}
+	if _, ok := handlers[PhaseSourceCheck].(*SourceCheckHandler); !ok {
+		t.Fatalf("source check should use local SourceCheckHandler, got %T", handlers[PhaseSourceCheck])
+	}
+	for _, phase := range []Phase{PhaseCollect, PhaseLink, PhaseScore, PhaseReport} {
+		if _, ok := handlers[phase].(*AgentPhaseHandler); !ok {
+			t.Fatalf("phase %q should use AgentPhaseHandler, got %T", phase, handlers[phase])
+		}
+	}
 }

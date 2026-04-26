@@ -183,11 +183,12 @@ func (h *AgentPhaseHandler) Handle(ctx context.Context, runCtx *RunContext) (*Tu
 	return h.Agent.runPhase(ctx, runCtx, h.Phase)
 }
 
-// AgentHandlers returns a phase-handler set where every phase is executed by
-// the same Codex app-server thread.
+// AgentHandlers returns the phase-handler set for the agent-backed runtime.
+// Source checks stay local because they are deterministic CLI probes; later
+// phases use the Codex app-server thread for analysis and judgment.
 func AgentHandlers(agent *CodexAgentRuntime) map[Phase]PhaseHandler {
 	return map[Phase]PhaseHandler{
-		PhaseSourceCheck: &AgentPhaseHandler{Phase: PhaseSourceCheck, Agent: agent},
+		PhaseSourceCheck: &SourceCheckHandler{},
 		PhaseCollect:     &AgentPhaseHandler{Phase: PhaseCollect, Agent: agent},
 		PhaseLink:        &AgentPhaseHandler{Phase: PhaseLink, Agent: agent},
 		PhaseScore:       &AgentPhaseHandler{Phase: PhaseScore, Agent: agent},
