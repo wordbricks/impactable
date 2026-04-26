@@ -208,10 +208,18 @@ type ContributorStats struct {
 }
 
 type PRImpact struct {
-	PRNumber   int
-	Score      float64
-	Confidence string
-	Reasoning  string
+	PRNumber          int
+	Score             float64
+	Confidence        string
+	PrimaryMetric     string
+	BeforeValue       float64
+	AfterValue        float64
+	DeltaValue        float64
+	BeforeWindowStart time.Time
+	BeforeWindowEnd   time.Time
+	AfterWindowStart  time.Time
+	AfterWindowEnd    time.Time
+	Reasoning         string
 }
 
 type AnalysisResult struct {

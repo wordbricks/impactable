@@ -160,6 +160,14 @@ func TestRenderPRDetailContentWrapsReasoningAndDropsQuotes(t *testing.T) {
 
 	result := sampleAnalysisResultForResultsModel()
 	result.PRImpacts[0].Reasoning = "Metric conversion_rate was chosen because it is the closest shipped outcome metric for this deployment and other metrics were either sparse or downstream only. The before window ran from 2026-02-08 to 2026-02-15 and the after window ran from 2026-02-15 to 2026-02-22. Conversion moved from 0.10 to 0.13, which is a meaningful relative lift for this flow. Confidence stays high because there were no overlapping deployments in the same window."
+	result.PRImpacts[0].PrimaryMetric = "conversion_rate"
+	result.PRImpacts[0].BeforeValue = 0.10
+	result.PRImpacts[0].AfterValue = 0.13
+	result.PRImpacts[0].DeltaValue = 0.03
+	result.PRImpacts[0].BeforeWindowStart = time.Date(2026, 2, 8, 0, 0, 0, 0, time.UTC)
+	result.PRImpacts[0].BeforeWindowEnd = time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)
+	result.PRImpacts[0].AfterWindowStart = time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)
+	result.PRImpacts[0].AfterWindowEnd = time.Date(2026, 2, 22, 0, 0, 0, 0, time.UTC)
 
 	model := NewResultsModel(result, nil)
 	modelPtr := &model
@@ -180,6 +188,12 @@ func TestRenderPRDetailContentWrapsReasoningAndDropsQuotes(t *testing.T) {
 	if strings.Count(reasoningSection[1], "\n") < 2 {
 		t.Fatalf("expected wrapped multi-line reasoning, got %q", reasoningSection[1])
 	}
+	if !strings.Contains(content, "Windows: before 2026-02-08 -> 2026-02-15, after 2026-02-15 -> 2026-02-22") {
+		t.Fatalf("expected structured window details, got %q", content)
+	}
+	if !strings.Contains(content, "Values: conversion_rate 0.1000 -> 0.1300 (delta +0.0300)") {
+		t.Fatalf("expected structured metric details, got %q", content)
+	}
 }
 
 func sampleAnalysisResultForResultsModel() *AnalysisResult {
@@ -195,8 +209,8 @@ func sampleAnalysisResultForResultsModel() *AnalysisResult {
 			{PRNumber: 140, Marker: "v2.4.0", Source: "release", DeployedAt: merged.Add(-24 * time.Hour)},
 		},
 		PRImpacts: []PRImpact{
-			{PRNumber: 142, Score: 8.2, Confidence: "high", Reasoning: "Metric conversion_rate moved from 0.10 to 0.13 (delta +0.03)"},
-			{PRNumber: 140, Score: 6.5, Confidence: "medium", Reasoning: "Metric cache_hit_rate moved from 0.70 to 0.78 (delta +0.08)"},
+			{PRNumber: 142, Score: 8.2, Confidence: "high", PrimaryMetric: "conversion_rate", BeforeValue: 0.10, AfterValue: 0.13, DeltaValue: 0.03, Reasoning: "Metric conversion_rate moved from 0.10 to 0.13 (delta +0.03)"},
+			{PRNumber: 140, Score: 6.5, Confidence: "medium", PrimaryMetric: "cache_hit_rate", BeforeValue: 0.70, AfterValue: 0.78, DeltaValue: 0.08, Reasoning: "Metric cache_hit_rate moved from 0.70 to 0.78 (delta +0.08)"},
 		},
 		FeatureGroups: []FeatureGroup{
 			{Name: "feature/onboarding-v2", PRNumbers: []int{140, 142}},

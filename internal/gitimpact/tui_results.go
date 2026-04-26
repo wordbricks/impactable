@@ -411,6 +411,10 @@ func (m *ResultsModel) renderPRDetailContent() string {
 	b.WriteString(fmt.Sprintf("Impact Score: %.1f / 10\n", impact.Score))
 	b.WriteString("─────────────────────────────────────────────\n")
 	b.WriteString(breakdown)
+	if details := structuredImpactDetails(impact); details != "" {
+		b.WriteString("\n")
+		b.WriteString(details)
+	}
 	b.WriteString("\n\nAgent reasoning:\n")
 	b.WriteString(reasoning)
 	return b.String()
@@ -446,7 +450,7 @@ func (m *ResultsModel) renderFeatureDetailContent() string {
 		if !ok {
 			continue
 		}
-		topMetric = parseMetricName(impact.Reasoning)
+		topMetric = primaryMetricName(impact)
 		if topMetric != "" {
 			break
 		}
@@ -612,8 +616,8 @@ func mapDeploymentByPRNumber(deployments []Deployment) map[int]Deployment {
 
 func metricBreakdownLine(impact PRImpact) string {
 	confidence := fallbackText(impact.Confidence, "unknown")
-	metricName := parseMetricName(impact.Reasoning)
-	delta := parseMetricDelta(impact.Reasoning)
+	metricName := primaryMetricName(impact)
+	delta := impactDeltaLabel(impact)
 	if metricName == "" {
 		metricName = "impact_signal"
 	}
@@ -623,12 +627,63 @@ func metricBreakdownLine(impact PRImpact) string {
 	return fmt.Sprintf("%s: %s (confidence: %s)", metricName, delta, confidence)
 }
 
+func structuredImpactDetails(impact PRImpact) string {
+	lines := make([]string, 0, 2)
+
+	if !impact.BeforeWindowStart.IsZero() || !impact.BeforeWindowEnd.IsZero() || !impact.AfterWindowStart.IsZero() || !impact.AfterWindowEnd.IsZero() {
+		lines = append(lines, fmt.Sprintf(
+			"Windows: before %s -> %s, after %s -> %s",
+			formatOptionalDate(impact.BeforeWindowStart),
+			formatOptionalDate(impact.BeforeWindowEnd),
+			formatOptionalDate(impact.AfterWindowStart),
+			formatOptionalDate(impact.AfterWindowEnd),
+		))
+	}
+
+	if metric := primaryMetricName(impact); metric != "" {
+		lines = append(lines, fmt.Sprintf(
+			"Values: %s %.4f -> %.4f (delta %s)",
+			metric,
+			impact.BeforeValue,
+			impact.AfterValue,
+			formatSignedFloat(impactDeltaValue(impact)),
+		))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 func formatReasoningForViewport(reasoning string, width int) string {
 	trimmed := strings.TrimSpace(reasoning)
 	if trimmed == "" {
 		return "No reasoning provided by agent."
 	}
 	return wrapText(trimmed, width)
+}
+
+func primaryMetricName(impact PRImpact) string {
+	if metric := strings.TrimSpace(impact.PrimaryMetric); metric != "" {
+		return metric
+	}
+	return parseMetricName(impact.Reasoning)
+}
+
+func impactDeltaValue(impact PRImpact) float64 {
+	if impact.PrimaryMetric != "" || impact.DeltaValue != 0 || impact.BeforeValue != 0 || impact.AfterValue != 0 {
+		return impact.DeltaValue
+	}
+	return 0
+}
+
+func impactDeltaLabel(impact PRImpact) string {
+	if impact.PrimaryMetric != "" || impact.DeltaValue != 0 || impact.BeforeValue != 0 || impact.AfterValue != 0 {
+		return fmt.Sprintf("delta %s", formatSignedFloat(impactDeltaValue(impact)))
+	}
+	return parseMetricDelta(impact.Reasoning)
+}
+
+func formatSignedFloat(value float64) string {
+	return fmt.Sprintf("%+.4f", value)
 }
 
 func wrapText(text string, width int) string {
@@ -762,6 +817,13 @@ func parseMetricDelta(reasoning string) string {
 		return ""
 	}
 	return strings.TrimSpace(remaining[:end])
+}
+
+func formatOptionalDate(ts time.Time) string {
+	if ts.IsZero() {
+		return "unknown"
+	}
+	return ts.UTC().Format("2006-01-02")
 }
 
 func formatOptionalTime(ts time.Time) string {

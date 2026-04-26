@@ -95,8 +95,8 @@ func sampleAnalysisResultForReports() *AnalysisResult {
 			{PRNumber: 142, Source: "release", Marker: "v2.4.1", DeployedAt: merged},
 		},
 		PRImpacts: []PRImpact{
-			{PRNumber: 142, Score: 8.2, Confidence: "high", Reasoning: "Metric conversion_rate moved from 0.10 to 0.13 (delta +0.03)"},
-			{PRNumber: 140, Score: 6.5, Confidence: "medium", Reasoning: "Metric cache_hit_rate moved from 0.70 to 0.78 (delta +0.08)"},
+			{PRNumber: 142, Score: 8.2, Confidence: "high", PrimaryMetric: "conversion_rate", BeforeValue: 0.10, AfterValue: 0.13, DeltaValue: 0.03, Reasoning: "Metric conversion_rate moved from 0.10 to 0.13 (delta +0.03)"},
+			{PRNumber: 140, Score: 6.5, Confidence: "medium", PrimaryMetric: "cache_hit_rate", BeforeValue: 0.70, AfterValue: 0.78, DeltaValue: 0.08, Reasoning: "Metric cache_hit_rate moved from 0.70 to 0.78 (delta +0.08)"},
 		},
 		FeatureGroups: []FeatureGroup{
 			{Name: "feature/onboarding-v2", PRNumbers: []int{140, 142}},

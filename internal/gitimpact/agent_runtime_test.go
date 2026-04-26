@@ -162,10 +162,11 @@ func TestBuildAgentPhasePromptIncludesDetailedScoreReasoningContract(t *testing.
 
 	for _, expected := range []string{
 		"detailed multi-line Reasoning string",
+		"PrimaryMetric, BeforeValue, AfterValue, DeltaValue",
+		"BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd",
 		"why the primary metric was chosen",
 		"before/after analysis windows used, with concrete dates",
 		"why that movement implies the assigned impact score",
-		"Start the first line with `Metric <name> ...`",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("score prompt missing %q:\n%s", expected, prompt)
