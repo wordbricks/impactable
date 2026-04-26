@@ -141,6 +141,38 @@ func TestBuildAgentPhasePromptIncludesRuntimeContract(t *testing.T) {
 	}
 }
 
+func TestBuildAgentPhasePromptIncludesDetailedScoreReasoningContract(t *testing.T) {
+	t.Parallel()
+
+	prompt, err := BuildAgentPhasePrompt(&RunContext{
+		Config: &Config{
+			OneQuery: OneQueryConfig{
+				Org: "jay",
+				Sources: OneQuerySources{
+					GitHub:    "wordbricks-github",
+					Analytics: "getgpt-prod",
+				},
+			},
+		},
+		AnalysisCtx: &AnalysisContext{WorkingDirectory: "/repo"},
+	}, PhaseScore)
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+
+	for _, expected := range []string{
+		"detailed multi-line Reasoning string",
+		"why the primary metric was chosen",
+		"before/after analysis windows used, with concrete dates",
+		"why that movement implies the assigned impact score",
+		"Start the first line with `Metric <name> ...`",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("score prompt missing %q:\n%s", expected, prompt)
+		}
+	}
+}
+
 func TestParseAgentPhasePayloadAcceptsLegacyStringTags(t *testing.T) {
 	t.Parallel()
 

@@ -155,6 +155,33 @@ func TestResultsModelDetailScrollUsesViewport(t *testing.T) {
 	}
 }
 
+func TestRenderPRDetailContentWrapsReasoningAndDropsQuotes(t *testing.T) {
+	t.Parallel()
+
+	result := sampleAnalysisResultForResultsModel()
+	result.PRImpacts[0].Reasoning = "Metric conversion_rate was chosen because it is the closest shipped outcome metric for this deployment and other metrics were either sparse or downstream only. The before window ran from 2026-02-08 to 2026-02-15 and the after window ran from 2026-02-15 to 2026-02-22. Conversion moved from 0.10 to 0.13, which is a meaningful relative lift for this flow. Confidence stays high because there were no overlapping deployments in the same window."
+
+	model := NewResultsModel(result, nil)
+	modelPtr := &model
+
+	updated, _ := modelPtr.Update(tea.WindowSizeMsg{Width: 60, Height: 18})
+	state := updated.(*ResultsModel)
+	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state = updated.(*ResultsModel)
+
+	content := state.renderPRDetailContent()
+	if strings.Contains(content, "\"Metric conversion_rate") {
+		t.Fatalf("reasoning should not be wrapped in quotes: %q", content)
+	}
+	reasoningSection := strings.SplitN(content, "Agent reasoning:\n", 2)
+	if len(reasoningSection) != 2 {
+		t.Fatalf("missing reasoning section: %q", content)
+	}
+	if strings.Count(reasoningSection[1], "\n") < 2 {
+		t.Fatalf("expected wrapped multi-line reasoning, got %q", reasoningSection[1])
+	}
+}
+
 func sampleAnalysisResultForResultsModel() *AnalysisResult {
 	merged := time.Date(2026, 2, 15, 14, 30, 0, 0, time.UTC)
 	return &AnalysisResult{

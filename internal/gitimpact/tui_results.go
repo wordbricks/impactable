@@ -113,6 +113,7 @@ func (m *ResultsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.windowWidth = typed.Width
 		m.windowHeight = typed.Height
 		m.resizeComponents()
+		m.refreshDetailViewport()
 		return m, nil
 	case saveResultMsg:
 		m.savePrompt = false
@@ -292,16 +293,14 @@ func (m *ResultsModel) drillIntoSelection() {
 			return
 		}
 		m.selectedPR = &m.prImpacts[m.cursor]
-		m.viewport.SetContent(m.renderPRDetailContent())
-		m.viewport.GotoTop()
+		m.refreshDetailViewport()
 	case resultsViewFeatures:
 		if m.cursor < 0 || m.cursor >= len(m.featureRows) {
 			return
 		}
 		row := m.featureRows[m.cursor]
 		m.selectedFeature = &FeatureGroup{Name: row.Name, PRNumbers: append([]int(nil), row.PRNumbers...)}
-		m.viewport.SetContent(m.renderFeatureDetailContent())
-		m.viewport.GotoTop()
+		m.refreshDetailViewport()
 	}
 }
 
@@ -403,6 +402,7 @@ func (m *ResultsModel) renderPRDetailContent() string {
 	}
 
 	breakdown := metricBreakdownLine(impact)
+	reasoning := formatReasoningForViewport(impact.Reasoning, m.detailContentWidth())
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("PR #%d - \"%s\"\n", impact.PRNumber, fallbackText(pr.Title, fmt.Sprintf("PR #%d", impact.PRNumber))))
@@ -412,7 +412,7 @@ func (m *ResultsModel) renderPRDetailContent() string {
 	b.WriteString("─────────────────────────────────────────────\n")
 	b.WriteString(breakdown)
 	b.WriteString("\n\nAgent reasoning:\n")
-	b.WriteString(fmt.Sprintf("\"%s\"", fallbackText(impact.Reasoning, "No reasoning provided by agent.")))
+	b.WriteString(reasoning)
 	return b.String()
 }
 
@@ -488,6 +488,42 @@ func (m *ResultsModel) resizeComponents() {
 		vpHeight = 6
 	}
 	m.viewport.Height = vpHeight
+}
+
+func (m *ResultsModel) refreshDetailViewport() {
+	if !m.inDetailView() {
+		return
+	}
+
+	offset := m.viewport.YOffset
+	switch {
+	case m.selectedPR != nil:
+		m.viewport.SetContent(m.renderPRDetailContent())
+	case m.selectedFeature != nil:
+		m.viewport.SetContent(m.renderFeatureDetailContent())
+	default:
+		return
+	}
+
+	maxOffset := maxInt(0, m.viewport.TotalLineCount()-m.viewport.Height)
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	m.viewport.SetYOffset(offset)
+}
+
+func (m *ResultsModel) detailContentWidth() int {
+	width := m.viewport.Width
+	if width <= 0 {
+		width = m.windowWidth - 2
+	}
+	if width < 40 {
+		width = 40
+	}
+	return width
 }
 
 func (m *ResultsModel) syncTableToActiveView() {
@@ -585,6 +621,117 @@ func metricBreakdownLine(impact PRImpact) string {
 		delta = fmt.Sprintf("score %.1f", impact.Score)
 	}
 	return fmt.Sprintf("%s: %s (confidence: %s)", metricName, delta, confidence)
+}
+
+func formatReasoningForViewport(reasoning string, width int) string {
+	trimmed := strings.TrimSpace(reasoning)
+	if trimmed == "" {
+		return "No reasoning provided by agent."
+	}
+	return wrapText(trimmed, width)
+}
+
+func wrapText(text string, width int) string {
+	if width < 20 {
+		width = 20
+	}
+
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	paragraphs := strings.Split(normalized, "\n")
+	lines := make([]string, 0, len(paragraphs))
+	for _, paragraph := range paragraphs {
+		trimmedRight := strings.TrimRight(paragraph, " \t")
+		if strings.TrimSpace(trimmedRight) == "" {
+			lines = append(lines, "")
+			continue
+		}
+		lines = append(lines, wrapParagraph(trimmedRight, width)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func wrapParagraph(paragraph string, width int) []string {
+	indent := leadingIndent(paragraph)
+	content := strings.TrimSpace(paragraph)
+	firstPrefix, nextPrefix := wrapPrefixes(indent, content)
+	if firstPrefix != "" && strings.HasPrefix(content, strings.TrimSpace(firstPrefix)) {
+		content = strings.TrimSpace(strings.TrimPrefix(content, strings.TrimSpace(firstPrefix)))
+	}
+
+	words := strings.Fields(content)
+	if len(words) == 0 {
+		return []string{strings.TrimRight(paragraph, " \t")}
+	}
+
+	lines := make([]string, 0, 4)
+	current := firstPrefix
+	currentLen := len(current)
+	prefixLen := len(firstPrefix)
+
+	for _, word := range words {
+		if currentLen == prefixLen {
+			current += word
+			currentLen += len(word)
+			continue
+		}
+		if currentLen+1+len(word) > width {
+			lines = append(lines, current)
+			current = nextPrefix + word
+			currentLen = len(current)
+			prefixLen = len(nextPrefix)
+			continue
+		}
+		current += " " + word
+		currentLen += 1 + len(word)
+	}
+
+	if strings.TrimSpace(current) != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func wrapPrefixes(indent string, content string) (string, string) {
+	trimmed := strings.TrimSpace(content)
+	switch {
+	case strings.HasPrefix(trimmed, "- "):
+		first := indent + "- "
+		return first, indent + strings.Repeat(" ", len("- "))
+	case strings.HasPrefix(trimmed, "* "):
+		first := indent + "* "
+		return first, indent + strings.Repeat(" ", len("* "))
+	}
+
+	if dot := strings.Index(trimmed, ". "); dot > 0 {
+		numberPart := trimmed[:dot]
+		if isDigits(numberPart) {
+			first := indent + numberPart + ". "
+			return first, indent + strings.Repeat(" ", len(numberPart)+2)
+		}
+	}
+
+	return indent, indent
+}
+
+func leadingIndent(value string) string {
+	for i, r := range value {
+		if r != ' ' && r != '\t' {
+			return value[:i]
+		}
+	}
+	return value
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseMetricName(reasoning string) string {
