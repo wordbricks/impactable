@@ -3,6 +3,9 @@
 ## Goal
 Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are evaluated against analytics metrics, PR impacts are scored with confidence reasoning, contributor rollups are computed, and phase control advances correctly.
 
+## Status
+Superseded. `git-impact analyze` now executes the score phase through the Codex app-server agent runtime. The earlier local `ScoreHandler` plan and its `phase_score.go` implementation were removed once they stopped serving any runtime path.
+
 ## Background
 - `SPEC.md` section 3.2 defines Impact Scorer responsibilities: schema exploration, metric querying, confidence judgment, and natural-language reasoning.
 - `SPEC.md` section 5.1 defines PR-level score semantics as agent judgment over meaningful metrics with confidence adjustment.
@@ -12,26 +15,22 @@ Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are eva
 ## Milestones
 | ID | Milestone | Status | Exit criteria |
 | --- | --- | --- | --- |
-| M1 | Add Impact Scorer handler scaffold | not started | `internal/gitimpact/phase_score.go` defines `ScoreHandler` with `Handle(context.Context, *RunContext)` and required helper functions. |
-| M2 | Implement schema discovery + metric query flow | not started | Handler queries analytics `information_schema.columns`, selects first usable metric, and runs before/after metric queries per deployment. |
-| M3 | Implement score/confidence/reasoning generation | not started | Each deployment yields `PRImpact` with score (0-10), confidence (`high`/`medium`/`low`), and reasoning including confounding context. |
-| M4 | Implement contributor rollup | not started | PR impacts are grouped by author to compute average score and top PR in `ContributorStats`. |
-| M5 | Add scorer tests | not started | `internal/gitimpact/phase_score_test.go` covers score normalization, confidence thresholds, contributor rollup, and empty-schema graceful behavior. |
-| M6 | Verify and finalize | not started | `go build ./...` and `go test ./...` pass; scorer changes are staged and committed. |
+| M1 | Add Impact Scorer handler scaffold | obsolete | The planned local `ScoreHandler` path was removed after the Codex app-server phase-agent path became the only analyze runtime. |
+| M2 | Implement schema discovery + metric query flow | obsolete | This behavior is now delegated to the agent score turn. |
+| M3 | Implement score/confidence/reasoning generation | obsolete | This behavior is now delegated to the agent score turn. |
+| M4 | Implement contributor rollup | obsolete | This behavior is now delegated to the agent score turn. |
+| M5 | Add scorer tests | obsolete | The removed `phase_score.go` / `phase_score_test.go` path is no longer part of the runtime. |
+| M6 | Verify and finalize | obsolete | No local scorer path remains to verify. |
 
 ## Current progress
-- Repository guardrails and architecture docs reviewed.
-- Required spec sections identified and read (`3.2`, `5.1`, `5.3`, `5.4`).
-- Impact Scorer implementation and tests are not started.
+- Historical plan retained for traceability only.
+- The local scorer path referenced in this plan no longer exists in the codebase.
 
 ## Key decisions
-- Reuse existing `OneQueryClient.Query` integration pattern from prior phase handlers for deterministic testability.
-- Keep default windows aligned with config defaults and spec defaults (7 days each when unset).
-- Treat deployment overlap density as the primary confidence baseline and surface overlap details in reasoning text.
+- Current runtime design delegates score-phase metric selection and scoring reasoning to the Codex app-server agent turn.
 
 ## Remaining issues
-- Analytics schemas may vary widely; first-metric discovery and date filtering logic must be robust to sparse metadata.
-- Some deployments may not map to PR authors in collected data; rollup behavior must handle missing author values safely.
+- No local scorer implementation remains under this plan.
 
 ## Links
 - `SPEC.md` (sections 3.2, 5.1, 5.3, 5.4)
@@ -39,5 +38,6 @@ Implement Turn 3 scoring behavior in `internal/gitimpact` so deployments are eva
 - `internal/gitimpact/types.go`
 - `internal/gitimpact/phase_collect.go`
 - `internal/gitimpact/phase_link.go`
+- `internal/gitimpact/agent_runtime.go`
 - `docs/PLANS.md`
 - `NON_NEGOTIABLE_RULES.md`

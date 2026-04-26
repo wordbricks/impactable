@@ -13,7 +13,7 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 - [x] Milestone 2 (completed): Add `phase_source_check.go` with `SourceCheckHandler` implementing `PhaseHandler`, including wait handling for missing/non-query-capable sources and wait-response resolution (`y` advance, `n` error).
 - [x] Milestone 3 (completed): Add `phase_collect.go` with `CollectHandler` implementing `PhaseHandler`, using OneQuery queries for PRs, tags, and releases; parse into `CollectedData`; persist to `runCtx`; return `DirectiveAdvancePhase`.
 - [x] Milestone 4 (completed): Add unit tests in `phase_source_check_test.go` and `phase_collect_test.go` with mockable OneQuery query/source behavior via interface or injectable functions.
-- [ ] Milestone 5 (not started): Add `DefaultHandlers(client *OneQueryClient) map[Phase]PhaseHandler` registration for SourceCheck + Collect plus temporary Link/Score/Report advance stubs; run `go build ./...` and `go test ./...`.
+- [ ] Milestone 5 (obsolete): This step originally planned a local `DefaultHandlers` registration path. The runtime now executes `git-impact analyze` through the Codex app-server agent engine, and the temporary default-engine path has been removed.
 
 ## Current progress
 - Plan created and checked in.
@@ -45,7 +45,7 @@ Implement the Source Check and Collect phase handlers in `internal/gitimpact/` s
 - Keep collector parsing defensive for mixed JSON row scalar types (`string`, `float64`, `[]interface{}`, `json.Number`) to avoid coupling to one OneQuery JSON decoder shape.
 
 ## Remaining issues
-- Register default phase handlers map (`DefaultHandlers`) and run full-repo build/test verification.
+- Historical note: the temporary local default-engine registration path planned for this step was later dropped after the Codex app-server agent engine became the only `git-impact analyze` runtime.
 
 ## Links
 - `SPEC.md` (sections 3.2, 4.1, 4.2, 4.3)
