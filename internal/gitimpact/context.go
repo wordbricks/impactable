@@ -86,6 +86,10 @@ func BuildInitialPrompt(ctx *AnalysisContext, cfg *Config) string {
 	if org == "" {
 		org = "not configured"
 	}
+	githubRepository := strings.TrimSpace(cfg.OneQuery.GitHubRepository)
+	if githubRepository == "" {
+		githubRepository = "not configured"
+	}
 
 	return strings.TrimSpace(fmt.Sprintf(`
 You are the WTL agent for git-impact. Analyze repository changes and estimate product impact.
@@ -99,6 +103,7 @@ Task context:
 
 Configured OneQuery context:
 - org: %s
+- github_repository_full_name: %s
 - github_source_key: %s
 - analytics_source_key: %s
 
@@ -106,7 +111,7 @@ Required startup flow:
 1) Run source checks first (whoami, current org, source list).
 2) Confirm GitHub and Analytics sources are available.
 3) If required inputs are missing or ambiguous, pause and ask the user before continuing.
-`, strings.TrimSpace(ctx.WorkingDirectory), strings.TrimSpace(ctx.ConfigPath), since, prScope, featureScope, org, githubSource, analyticsSource))
+`, strings.TrimSpace(ctx.WorkingDirectory), strings.TrimSpace(ctx.ConfigPath), since, prScope, featureScope, org, githubRepository, githubSource, analyticsSource))
 }
 
 func resolveConfigPath(cwd string, configPath string) (string, error) {

@@ -79,7 +79,8 @@ func TestBuildInitialPrompt_IncludesScopeAndSources(t *testing.T) {
 
 	cfg := &Config{
 		OneQuery: OneQueryConfig{
-			Org: "impactable",
+			Org:              "impactable",
+			GitHubRepository: "wordbricks/wordbricks",
 			Sources: OneQuerySources{
 				GitHub:    "github-main",
 				Analytics: "amplitude-prod",
@@ -91,6 +92,7 @@ func TestBuildInitialPrompt_IncludesScopeAndSources(t *testing.T) {
 	expected := []string{
 		"scope_since: 2026-01-01",
 		"scope_pr: PR #142 only",
+		"github_repository_full_name: wordbricks/wordbricks",
 		"github_source_key: github-main",
 		"analytics_source_key: amplitude-prod",
 	}

@@ -311,7 +311,7 @@ func phaseInstructions(phase Phase) string {
 	case PhaseSourceCheck:
 		return "Verify org and required GitHub/Analytics OneQuery sources. If a required source is missing, return directive wait with a specific question. Otherwise return advance_phase."
 	case PhaseCollect:
-		return "Collect GitHub PR, tag, and release data for the requested scope. Return collected_data using the exact typed schema: Tags must be objects with Name, optional Sha, and optional CreatedAt; never return Tags as strings or as arbitrary metadata objects. Return advance_phase when enough data is present."
+		return "Collect GitHub PR, tag, and release data for the requested scope. If Config.OneQuery.GitHubRepository is set, analyze exactly that GitHub repository full name and do not infer the repository from the current worktree or local git remote. Return collected_data using the exact typed schema: Tags must be objects with Name, optional Sha, and optional CreatedAt; never return Tags as strings or as arbitrary metadata objects. Return advance_phase when enough data is present."
 	case PhaseLink:
 		return "Infer deployments and feature groups from collected_data. If a deployment or feature mapping is ambiguous, return wait with the concrete mapping question. Otherwise return linked_data and advance_phase."
 	case PhaseScore:

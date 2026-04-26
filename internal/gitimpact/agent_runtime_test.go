@@ -129,6 +129,7 @@ func TestBuildAgentPhasePromptIncludesRuntimeContract(t *testing.T) {
 		"onequery --org <org> auth whoami",
 		"Return exactly one JSON object",
 		"\"Org\": \"jay\"",
+		"GitHubRepository",
 		"source show",
 		"\"Tags\": [{\"Name\": \"\"",
 	} {
@@ -138,6 +139,38 @@ func TestBuildAgentPhasePromptIncludesRuntimeContract(t *testing.T) {
 	}
 	if strings.Contains(prompt, "non-queryable") {
 		t.Fatalf("source check prompt should not wait on non-queryable sources:\n%s", prompt)
+	}
+}
+
+func TestBuildAgentPhasePromptCollectUsesConfiguredGitHubRepository(t *testing.T) {
+	t.Parallel()
+
+	prompt, err := BuildAgentPhasePrompt(&RunContext{
+		Config: &Config{
+			OneQuery: OneQueryConfig{
+				Org:              "jay",
+				GitHubRepository: "wordbricks/wordbricks",
+				Sources: OneQuerySources{
+					GitHub:    "wordbricks-github",
+					Analytics: "getgpt-prod",
+				},
+			},
+		},
+		AnalysisCtx: &AnalysisContext{WorkingDirectory: "/repo"},
+	}, PhaseCollect)
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+
+	for _, expected := range []string{
+		"Config.OneQuery.GitHubRepository is set",
+		"analyze exactly that GitHub repository full name",
+		"do not infer the repository from the current worktree",
+		"wordbricks/wordbricks",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("collect prompt missing %q:\n%s", expected, prompt)
+		}
 	}
 }
 

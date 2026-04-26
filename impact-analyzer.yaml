@@ -1,5 +1,6 @@
 onequery:
   org: jay
+  github_repository: wordbricks/wordbricks
   sources:
     github: wordbricks-github
     analytics: getgpt-prod

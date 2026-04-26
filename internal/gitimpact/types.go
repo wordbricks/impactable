@@ -15,8 +15,9 @@ type Config struct {
 }
 
 type OneQueryConfig struct {
-	Org     string          `mapstructure:"org"`
-	Sources OneQuerySources `mapstructure:"sources"`
+	Org              string          `mapstructure:"org"`
+	GitHubRepository string          `mapstructure:"github_repository"`
+	Sources          OneQuerySources `mapstructure:"sources"`
 }
 
 type OneQuerySources struct {

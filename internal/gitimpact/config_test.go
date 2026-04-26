@@ -13,6 +13,7 @@ func TestLoadConfig_AppliesDefaults(t *testing.T) {
 	configPath := filepath.Join(dir, "impact-analyzer.yaml")
 	content := `onequery:
   org: my-company
+  github_repository: acme/widgets
   sources:
     github: github-main
     analytics: amplitude-prod
@@ -33,6 +34,9 @@ feature_grouping:
 
 	if cfg.OneQuery.Org != "my-company" {
 		t.Fatalf("expected org my-company, got %q", cfg.OneQuery.Org)
+	}
+	if cfg.OneQuery.GitHubRepository != "acme/widgets" {
+		t.Fatalf("expected github repository acme/widgets, got %q", cfg.OneQuery.GitHubRepository)
 	}
 	if cfg.OneQuery.Sources.GitHub != "github-main" {
 		t.Fatalf("expected github source github-main, got %q", cfg.OneQuery.Sources.GitHub)
@@ -58,6 +62,7 @@ func TestLoadConfig_UsesExplicitAnalysisValues(t *testing.T) {
 	configPath := filepath.Join(dir, "impact-analyzer.yaml")
 	content := `onequery:
   org: my-company
+  github_repository: acme/widgets
   sources:
     github: github-main
     analytics: amplitude-prod
@@ -90,5 +95,8 @@ feature_grouping:
 	}
 	if cfg.FeatureGrouping.CustomMappingsFile != "custom-feature-map.yaml" {
 		t.Fatalf("expected custom mapping file custom-feature-map.yaml, got %q", cfg.FeatureGrouping.CustomMappingsFile)
+	}
+	if cfg.OneQuery.GitHubRepository != "acme/widgets" {
+		t.Fatalf("expected github repository acme/widgets, got %q", cfg.OneQuery.GitHubRepository)
 	}
 }
