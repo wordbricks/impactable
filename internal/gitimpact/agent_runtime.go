@@ -327,10 +327,10 @@ func (h *AgentPhaseHandler) Handle(ctx context.Context, runCtx *RunContext) (*Tu
 func AgentHandlers(agent *CodexAgentRuntime) map[Phase]PhaseHandler {
 	return map[Phase]PhaseHandler{
 		PhaseSourceCheck: &SourceCheckHandler{},
-		PhaseCollect:     &AgentPhaseHandler{Phase: PhaseCollect, Agent: agent},
-		PhaseLink:        &AgentPhaseHandler{Phase: PhaseLink, Agent: agent},
+		PhaseCollect:     &CollectHandler{},
+		PhaseLink:        &LinkHandler{},
 		PhaseScore:       &AgentPhaseHandler{Phase: PhaseScore, Agent: agent},
-		PhaseReport:      &AgentPhaseHandler{Phase: PhaseReport, Agent: agent},
+		PhaseReport:      &ReportHandler{},
 	}
 }
 
@@ -382,8 +382,10 @@ func applyAgentPhasePayload(runCtx *RunContext, payload AgentPhasePayload) {
 		runCtx.ScoredData = payload.ScoredData
 	}
 	if payload.AnalysisResult != nil {
-		if len(payload.AnalysisResult.PRs) > 0 || len(payload.AnalysisResult.Deployments) > 0 {
+		if runCtx.CollectedData == nil && len(payload.AnalysisResult.PRs) > 0 {
 			runCtx.CollectedData = &CollectedData{PRs: payload.AnalysisResult.PRs}
+		}
+		if runCtx.LinkedData == nil && (len(payload.AnalysisResult.Deployments) > 0 || len(payload.AnalysisResult.FeatureGroups) > 0) {
 			runCtx.LinkedData = &LinkedData{
 				Deployments:    payload.AnalysisResult.Deployments,
 				FeatureGroups:  payload.AnalysisResult.FeatureGroups,
@@ -434,11 +436,12 @@ func BuildAgentPhasePrompt(runCtx *RunContext, phase Phase) (string, error) {
 You are running inside Codex app-server. This is one WTL turn for phase %q.
 Use only OneQuery CLI for external data access. Do not use direct credentials or write operations.
 Use "onequery query exec" for SQL-queryable sources and "onequery api --source <source_key>" for connected API sources, including sources whose source metadata has queryable=false. All OneQuery SQL must be SELECT-only and bounded by date filters and LIMITs where practical. API calls must use read-only HTTP methods unless a phase explicitly requires otherwise.
+Preserve the existing OneQuery auth context. Do not override HOME or XDG_CONFIG_HOME for OneQuery commands unless the default config path fails due a concrete filesystem permission error. If you must redirect XDG_CONFIG_HOME, first copy the existing onequery config directory into that redirected config home so auth.json and config.toml remain available.
 
 Configured flow:
 - Source check: run "onequery --org <org> auth whoami", "onequery --org <org> org current", "onequery --org <org> source list", and "source show" for required sources.
 - Collect: use OneQuery query or API commands against the GitHub source for PRs, commits, branches, tags, releases, labels, and changed files for the requested scope.
-- Link: infer deployment markers from releases, tags, then PR merge time; wait when mapping is ambiguous.
+- Link: infer deployment markers and feature groups from PR content. Prefer releases and tags when they clearly line up; otherwise use PR merge time as the deployment marker and explain that fallback in output.
 - Score: explore the analytics source through OneQuery query or API commands, choose relevant metrics, fetch bounded before/after deployment windows, and explain confidence.
 - Report: produce final analysis data and complete the run.
 
@@ -475,9 +478,9 @@ func phaseInstructions(phase Phase) string {
 	case PhaseCollect:
 		return "Collect GitHub PR, tag, and release data for the requested scope. Prefer onequery api for GitHub connected API sources, for example `onequery --org <org> api --source <github_source> <owner>/<repo>/pulls -f params[state]=closed -f params[per_page]=100`; follow with API calls for commits, tags, releases, labels, and changed files as needed. If Config.OneQuery.GitHubRepository is set, analyze exactly that GitHub repository full name and do not infer the repository from the current worktree or local git remote. Return collected_data using the exact typed schema: Tags must be objects with Name, optional Sha, and optional CreatedAt; never return Tags as strings or as arbitrary metadata objects. Return advance_phase when enough data is present."
 	case PhaseLink:
-		return "Infer deployments and feature groups from collected_data. If a deployment or feature mapping is ambiguous, return wait with the concrete mapping question. Otherwise return linked_data and advance_phase."
+		return "Infer deployments and feature groups from collected_data using the PR title, branch, labels, changed files, and any available summary text. Do not ask the user to resolve ordinary ambiguity. If releases or tags do not clearly line up with the collected PR merge window, use each PR's MergedAt timestamp as the deployment marker with Source set to fallback_merge_time. If branch_prefix produces a generic bucket such as codex, chore, fix, feature, or a personal username, split or name feature groups from the actual PR content instead of waiting for feature-map.yaml. Return wait only when required input is completely missing and no defensible inference can be made. Otherwise return linked_data and advance_phase, and include any uncertainty in output or AmbiguousItems without blocking."
 	case PhaseScore:
-		return "Explore analytics through OneQuery. Choose relevant metrics, fetch bounded before/after windows, calculate PR impact and contributor stats. For every PRImpact, populate structured fields as available: PrimaryMetric, BeforeValue, AfterValue, DeltaValue, BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd. Use RFC3339 timestamps for window boundaries. Also write a detailed multi-line Reasoning string instead of a one-line summary. The reasoning must explain: (1) why the primary metric was chosen over other available metrics, (2) the deployment marker and before/after analysis windows used, with concrete dates, (3) the before/after metric values and delta, (4) why that movement implies the assigned impact score, and (5) what reduces or increases confidence, including overlapping deployments or weak attribution. Use explicit numbers and dates when bounded metric reads succeed. Do not fabricate analytics values. If source discovery succeeds but bounded metric endpoints fail or time out after reasonable attempts, return scored_data with empty PRImpacts and ContributorStats, explain the unavailable bounded evidence in output, and use directive advance_phase instead of retry. Reserve retry for transient tool/runtime failures that another identical phase turn can plausibly fix."
+		return "Explore analytics through OneQuery. First inspect the configured analytics source metadata and source API descriptor, then choose provider-appropriate read-only operations and relevant metrics. Fetch bounded before/after windows, calculate PR impact and contributor stats. Do not assume the analytics provider; do not use provider-specific endpoints, fields, date formats, or payload shapes unless they come from the source descriptor, source metadata, or a successful read-only probe for that source. For every PRImpact, populate structured fields as available: PrimaryMetric, BeforeValue, AfterValue, DeltaValue, BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd. Use RFC3339 timestamps for window boundaries. Also write a detailed multi-line Reasoning string instead of a one-line summary. The reasoning must explain: (1) why the primary metric was chosen over other available metrics, (2) the deployment marker and before/after analysis windows used, with concrete dates, (3) the before/after metric values and delta, (4) why that movement implies the assigned impact score, and (5) what reduces or increases confidence, including overlapping deployments or weak attribution. Use explicit numbers and dates when bounded metric reads succeed. Do not fabricate analytics values. If source discovery succeeds but bounded metric endpoints fail, auth/config access is unavailable inside the score turn, or requests time out after reasonable attempts, return scored_data with empty PRImpacts and ContributorStats, explain the unavailable bounded evidence in output, and use directive advance_phase instead of wait or retry. Reserve retry for transient tool/runtime failures that another identical phase turn can plausibly fix."
 	case PhaseReport:
 		return "Assemble the final report data from current state. Return complete with output and optionally analysis_result."
 	default:

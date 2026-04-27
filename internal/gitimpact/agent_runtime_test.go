@@ -293,26 +293,61 @@ func TestBuildAgentPhasePromptIncludesDetailedScoreReasoningContract(t *testing.
 		"detailed multi-line Reasoning string",
 		"PrimaryMetric, BeforeValue, AfterValue, DeltaValue",
 		"BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd",
+		"Preserve the existing OneQuery auth context",
 		"why the primary metric was chosen",
 		"before/after analysis windows used, with concrete dates",
 		"why that movement implies the assigned impact score",
 		"Do not fabricate analytics values",
+		"First inspect the configured analytics source metadata and source API descriptor",
+		"Do not assume the analytics provider",
+		"do not use provider-specific endpoints",
+		"auth/config access is unavailable inside the score turn",
 		"return scored_data with empty PRImpacts and ContributorStats",
-		"use directive advance_phase instead of retry",
+		"use directive advance_phase instead of wait or retry",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("score prompt missing %q:\n%s", expected, prompt)
 		}
 	}
 	for _, unexpected := range []string{
-		"/2/events/segmentation",
-		"params[e]=[...]",
+		"Amplitude",
+		"amplitude",
 		"onequery api --help",
 		"--dry-run",
 		"Discover the correct OneQuery CLI",
 	} {
 		if strings.Contains(prompt, unexpected) {
 			t.Fatalf("score prompt should not include hard-coded provider example %q:\n%s", unexpected, prompt)
+		}
+	}
+}
+
+func TestBuildAgentPhasePromptLinkInfersWithoutUserConfirmation(t *testing.T) {
+	t.Parallel()
+
+	prompt, err := BuildAgentPhasePrompt(&RunContext{
+		Config:      &Config{},
+		AnalysisCtx: &AnalysisContext{WorkingDirectory: "/repo"},
+		CollectedData: &CollectedData{PRs: []PR{{
+			Number:   6054,
+			Title:    "feat: replace ChannelTalk with floating feature request button",
+			Branch:   "codex/replace-channeltalk-feature-request",
+			MergedAt: time.Date(2026, 4, 13, 12, 41, 7, 0, time.UTC),
+		}}},
+	}, PhaseLink)
+	if err != nil {
+		t.Fatalf("build prompt: %v", err)
+	}
+
+	for _, expected := range []string{
+		"Do not ask the user to resolve ordinary ambiguity",
+		"use each PR's MergedAt timestamp as the deployment marker",
+		"fallback_merge_time",
+		"split or name feature groups from the actual PR content",
+		"without blocking",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("link prompt missing %q:\n%s", expected, prompt)
 		}
 	}
 }
@@ -356,6 +391,78 @@ func TestParseAgentPhasePayloadAcceptsTagObjectsWithoutCreatedAt(t *testing.T) {
 	tag := payload.CollectedData.Tags[0]
 	if tag.Name != "v0.91.1" || tag.Sha != "794b91c400023ef14e6642c343093caac818c528" || !tag.CreatedAt.IsZero() {
 		t.Fatalf("unexpected tag: %#v", tag)
+	}
+}
+
+func TestParseAgentPhasePayloadAcceptsAnalysisResultPRNumbers(t *testing.T) {
+	t.Parallel()
+
+	payload, err := ParseAgentPhasePayload(`{
+		"directive":"advance_phase",
+		"analysis_result":{"PRs":[6054]}
+	}`)
+	if err != nil {
+		t.Fatalf("parse payload: %v", err)
+	}
+	if payload.AnalysisResult == nil || len(payload.AnalysisResult.PRs) != 1 {
+		t.Fatalf("expected one analysis result PR, got %#v", payload.AnalysisResult)
+	}
+	if got := payload.AnalysisResult.PRs[0].Number; got != 6054 {
+		t.Fatalf("PR number = %d, want 6054", got)
+	}
+}
+
+func TestParseAgentPhasePayloadAcceptsScoreAliases(t *testing.T) {
+	t.Parallel()
+
+	payload, err := ParseAgentPhasePayload(`{
+		"directive":"advance_phase",
+		"scored_data":{
+			"Contributors":[{"Author":"siisee11","PRCount":4,"MeasuredPRCount":1,"AverageMeasuredImpactScore":20}],
+			"PRImpacts":[{"PRNumber":6054,"ImpactScore":20,"Confidence":"low","Reason":"Direct event increased","Before":0,"After":3,"Delta":3}]
+		}
+	}`)
+	if err != nil {
+		t.Fatalf("parse payload: %v", err)
+	}
+	if payload.ScoredData == nil {
+		t.Fatal("expected scored data")
+	}
+	if len(payload.ScoredData.PRImpacts) != 1 {
+		t.Fatalf("expected one PR impact, got %#v", payload.ScoredData.PRImpacts)
+	}
+	impact := payload.ScoredData.PRImpacts[0]
+	if impact.Score != 20 || impact.Reasoning != "Direct event increased" || impact.AfterValue != 3 || impact.DeltaValue != 3 {
+		t.Fatalf("unexpected impact alias decode: %#v", impact)
+	}
+	if len(payload.ScoredData.ContributorStats) != 1 {
+		t.Fatalf("expected one contributor, got %#v", payload.ScoredData.ContributorStats)
+	}
+	contributor := payload.ScoredData.ContributorStats[0]
+	if contributor.Author != "siisee11" || contributor.PRCount != 4 || contributor.AverageScore != 20 {
+		t.Fatalf("unexpected contributor alias decode: %#v", contributor)
+	}
+}
+
+func TestApplyAgentPhasePayloadDoesNotOverwriteExistingCollectedDataWithPartialAnalysisResult(t *testing.T) {
+	t.Parallel()
+
+	runCtx := &RunContext{
+		CollectedData: &CollectedData{PRs: []PR{{Number: 6054, Title: "full collected PR"}}},
+		LinkedData:    &LinkedData{Deployments: []Deployment{{PRNumber: 6054, Source: "existing"}}},
+	}
+	applyAgentPhasePayload(runCtx, AgentPhasePayload{
+		AnalysisResult: &AnalysisResult{
+			PRs:         []PR{{Number: 6054}},
+			Deployments: []Deployment{{PRNumber: 6054, Source: "partial"}},
+		},
+	})
+
+	if got := runCtx.CollectedData.PRs[0].Title; got != "full collected PR" {
+		t.Fatalf("collected data was overwritten: %#v", runCtx.CollectedData.PRs[0])
+	}
+	if got := runCtx.LinkedData.Deployments[0].Source; got != "existing" {
+		t.Fatalf("linked data was overwritten: %#v", runCtx.LinkedData.Deployments[0])
 	}
 }
 
@@ -415,9 +522,16 @@ func TestAgentHandlersIncludesAllPhases(t *testing.T) {
 	if _, ok := handlers[PhaseSourceCheck].(*SourceCheckHandler); !ok {
 		t.Fatalf("source check should use local SourceCheckHandler, got %T", handlers[PhaseSourceCheck])
 	}
-	for _, phase := range []Phase{PhaseCollect, PhaseLink, PhaseScore, PhaseReport} {
-		if _, ok := handlers[phase].(*AgentPhaseHandler); !ok {
-			t.Fatalf("phase %q should use AgentPhaseHandler, got %T", phase, handlers[phase])
-		}
+	if _, ok := handlers[PhaseCollect].(*CollectHandler); !ok {
+		t.Fatalf("collect should use local CollectHandler, got %T", handlers[PhaseCollect])
+	}
+	if _, ok := handlers[PhaseLink].(*LinkHandler); !ok {
+		t.Fatalf("link should use local LinkHandler, got %T", handlers[PhaseLink])
+	}
+	if _, ok := handlers[PhaseScore].(*AgentPhaseHandler); !ok {
+		t.Fatalf("score should use AgentPhaseHandler, got %T", handlers[PhaseScore])
+	}
+	if _, ok := handlers[PhaseReport].(*ReportHandler); !ok {
+		t.Fatalf("report should use local ReportHandler, got %T", handlers[PhaseReport])
 	}
 }

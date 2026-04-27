@@ -125,6 +125,27 @@ func (c *OneQueryClient) Query(sourceKey, sql string) (*QueryResult, error) {
 	return result, nil
 }
 
+func (c *OneQueryClient) API(sourceKey, target string, fields []string, jq string) ([]byte, error) {
+	args := []string{"api", "--source", sourceKey}
+	if strings.TrimSpace(target) != "" {
+		args = append(args, target)
+	}
+	for _, field := range fields {
+		if strings.TrimSpace(field) == "" {
+			continue
+		}
+		args = append(args, "-f", field)
+	}
+	if strings.TrimSpace(jq) != "" {
+		args = append(args, "--jq", jq)
+	}
+	payload, err := c.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	return extractOneQueryData(payload), nil
+}
+
 func (c *OneQueryClient) runAndDecode(target any, args ...string) error {
 	payload, err := c.run(args...)
 	if err != nil {

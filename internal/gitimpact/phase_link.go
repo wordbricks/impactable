@@ -38,12 +38,6 @@ func (h *LinkHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResult
 
 	featureGroups := proposeFeatureGroups(prs)
 	ambiguousItems := detectAmbiguousDeployments(prs, releases)
-	if len(ambiguousItems) > 0 {
-		return &TurnResult{
-			Directive:   DirectiveWait,
-			WaitMessage: buildAmbiguityWaitMessage(ambiguousItems),
-		}, nil
-	}
 
 	runCtx.LinkedData = &LinkedData{
 		Deployments:    deployments,
@@ -51,14 +45,18 @@ func (h *LinkHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResult
 		AmbiguousItems: ambiguousItems,
 	}
 
-	return &TurnResult{Directive: DirectiveAdvancePhase}, nil
+	output := "Linked PRs using inferred deployment markers and feature groups."
+	if len(ambiguousItems) > 0 {
+		output = "Linked PRs without blocking; ambiguous release clusters were retained in AmbiguousItems."
+	}
+	return &TurnResult{Directive: DirectiveAdvancePhase, Output: output}, nil
 }
 
 func inferDeployment(pr PR, releases []Release, tags []Tag) (Deployment, bool) {
 	deployment := Deployment{
 		PRNumber:   pr.Number,
 		Marker:     fmt.Sprintf("pr-%d-merge", pr.Number),
-		Source:     "pr_merge",
+		Source:     "fallback_merge_time",
 		DeployedAt: pr.MergedAt,
 	}
 	if pr.MergedAt.IsZero() {
@@ -89,32 +87,44 @@ func proposeFeatureGroups(prs []PR) []FeatureGroup {
 	}
 
 	groups := map[string]*groupBucket{}
-	addToGroup := func(name string, prNumber int) {
+	addToGroup := func(name string, prNumber int, requireFeaturePrefix bool) bool {
 		trimmed := strings.TrimSpace(name)
 		if trimmed == "" {
-			return
+			return false
 		}
-		if !strings.HasPrefix(strings.ToLower(trimmed), "feature/") {
-			return
+		if requireFeaturePrefix && !strings.HasPrefix(strings.ToLower(trimmed), "feature/") {
+			return false
 		}
 
-		key := strings.ToLower(trimmed)
+		key := strings.ToLower(normalizeFeatureGroupName(trimmed))
+		if key == "" {
+			return false
+		}
 		bucket, ok := groups[key]
 		if !ok {
 			bucket = &groupBucket{
-				Name:      trimmed,
+				Name:      key,
 				PRNumbers: map[int]struct{}{},
 			}
 			groups[key] = bucket
 		}
 		bucket.PRNumbers[prNumber] = struct{}{}
+		return true
 	}
 
 	for _, pr := range prs {
+		added := false
 		for _, label := range pr.Labels {
-			addToGroup(label, pr.Number)
+			if addToGroup(label, pr.Number, true) {
+				added = true
+			}
 		}
-		addToGroup(pr.Branch, pr.Number)
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(pr.Branch)), "feature/") && addToGroup(pr.Branch, pr.Number, true) {
+			added = true
+		}
+		if !added {
+			addToGroup(featureNameFromPR(pr), pr.Number, false)
+		}
 	}
 
 	groupNames := make([]string, 0, len(groups))
@@ -137,6 +147,86 @@ func proposeFeatureGroups(prs []PR) []FeatureGroup {
 		})
 	}
 	return result
+}
+
+func featureNameFromPR(pr PR) string {
+	if candidate := branchFeatureCandidate(pr.Branch); candidate != "" {
+		return candidate
+	}
+	if candidate := titleFeatureCandidate(pr.Title); candidate != "" {
+		return candidate
+	}
+	for _, file := range pr.ChangedFile {
+		if candidate := fileFeatureCandidate(file); candidate != "" {
+			return candidate
+		}
+	}
+	if pr.Number > 0 {
+		return fmt.Sprintf("pr_%d", pr.Number)
+	}
+	return "unknown_feature"
+}
+
+func branchFeatureCandidate(branch string) string {
+	trimmed := strings.Trim(strings.ToLower(strings.TrimSpace(branch)), "/")
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, "/")
+	if len(parts) > 1 {
+		return strings.Join(parts[1:], "_")
+	}
+	return trimmed
+}
+
+func titleFeatureCandidate(title string) string {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" {
+		return ""
+	}
+	if idx := strings.Index(trimmed, ":"); idx >= 0 && idx+1 < len(trimmed) {
+		trimmed = trimmed[idx+1:]
+	}
+	return trimmed
+}
+
+func fileFeatureCandidate(path string) string {
+	trimmed := strings.Trim(strings.ToLower(strings.TrimSpace(path)), "/")
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 1 {
+		return strings.TrimSuffix(parts[0], ".ts")
+	}
+	if len(parts) >= 2 && parts[0] == "packages" {
+		return strings.Join(parts[:minInt(3, len(parts))], "_")
+	}
+	return strings.Join(parts[:minInt(2, len(parts))], "_")
+}
+
+func normalizeFeatureGroupName(value string) string {
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range strings.ToLower(value) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func detectAmbiguousDeployments(prs []PR, releases []Release) []AmbiguousDeployment {

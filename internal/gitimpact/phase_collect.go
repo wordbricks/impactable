@@ -3,6 +3,7 @@ package gitimpact
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,10 +16,12 @@ const (
 )
 
 type collectQueryFn func(client *OneQueryClient, sourceKey string, sql string) (*QueryResult, error)
+type collectAPIFn func(client *OneQueryClient, sourceKey string, target string, fields []string, jq string) ([]byte, error)
 
 // CollectHandler fetches GitHub PR, tag, and release metadata through OneQuery.
 type CollectHandler struct {
 	Query collectQueryFn
+	API   collectAPIFn
 }
 
 func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnResult, error) {
@@ -56,6 +59,9 @@ func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnRes
 	)
 	prResult, err := query(client, sourceKey, prSQL)
 	if err != nil {
+		if isSourceNotQueryable(err) {
+			return h.collectViaAPI(client, sourceKey, since, runCtx)
+		}
 		return nil, fmt.Errorf("collect prs: %w", err)
 	}
 	prs, err := parsePRRows(prResult)
@@ -90,6 +96,161 @@ func (h *CollectHandler) Handle(_ context.Context, runCtx *RunContext) (*TurnRes
 	}
 
 	return &TurnResult{Directive: DirectiveAdvancePhase}, nil
+}
+
+func (h *CollectHandler) collectViaAPI(client *OneQueryClient, sourceKey string, since string, runCtx *RunContext) (*TurnResult, error) {
+	repo := ""
+	if runCtx != nil && runCtx.Config != nil {
+		repo = strings.TrimSpace(runCtx.Config.OneQuery.GitHubRepository)
+	}
+	if repo == "" {
+		return nil, fmt.Errorf("github repository is required for api collection")
+	}
+
+	apiCall := h.API
+	if apiCall == nil {
+		apiCall = func(client *OneQueryClient, sourceKey string, target string, fields []string, jq string) ([]byte, error) {
+			return client.API(sourceKey, target, fields, jq)
+		}
+	}
+
+	sinceTime, err := time.Parse(collectDateLayout, since)
+	if err != nil {
+		return nil, fmt.Errorf("collect api: invalid since date %q: %w", since, err)
+	}
+	sinceRFC3339 := sinceTime.UTC().Format(time.RFC3339)
+
+	prJQ := fmt.Sprintf(`[.[] | select(.merged_at != null and .merged_at >= %q) | {Number: .number, Title: .title, Author: .user.login, MergedAt: .merged_at, Branch: .head.ref, Labels: [.labels[].name]}]`, sinceRFC3339)
+	prPayload, err := apiCall(client, sourceKey, repo+"/pulls", []string{
+		"params[state]=closed",
+		"params[sort]=updated",
+		"params[direction]=desc",
+		"params[per_page]=100",
+	}, prJQ)
+	if err != nil {
+		return nil, fmt.Errorf("collect prs via api: %w", err)
+	}
+	prs, err := parseAPIPrs(prPayload)
+	if err != nil {
+		return nil, err
+	}
+	for idx := range prs {
+		filesPayload, err := apiCall(client, sourceKey, fmt.Sprintf("%s/pulls/%d/files", repo, prs[idx].Number), []string{"params[per_page]=100"}, `[.[].filename]`)
+		if err != nil {
+			return nil, fmt.Errorf("collect changed files for pr %d: %w", prs[idx].Number, err)
+		}
+		files, err := parseStringArray(filesPayload)
+		if err != nil {
+			return nil, fmt.Errorf("collect changed files for pr %d: %w", prs[idx].Number, err)
+		}
+		prs[idx].ChangedFile = files
+	}
+
+	tagPayload, err := apiCall(client, sourceKey, repo+"/tags", []string{"params[per_page]=100"}, `[.[] | {Name: .name, Sha: .commit.sha}]`)
+	if err != nil {
+		return nil, fmt.Errorf("collect tags via api: %w", err)
+	}
+	tags, err := parseAPITags(tagPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	releasePayload, err := apiCall(client, sourceKey, repo+"/releases", []string{"params[per_page]=100"}, `[.[] | {Name: .name, TagName: .tag_name, PublishedAt: .published_at}]`)
+	if err != nil {
+		return nil, fmt.Errorf("collect releases via api: %w", err)
+	}
+	releases, err := parseAPIReleases(releasePayload)
+	if err != nil {
+		return nil, err
+	}
+
+	runCtx.CollectedData = &CollectedData{
+		PRs:      prs,
+		Tags:     tags,
+		Releases: releases,
+	}
+	return &TurnResult{Directive: DirectiveAdvancePhase}, nil
+}
+
+func isSourceNotQueryable(err error) bool {
+	var oneQueryErr *OneQueryError
+	if !errors.As(err, &oneQueryErr) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(oneQueryErr.Code), "SOURCE_NOT_QUERYABLE")
+}
+
+func parseAPIPrs(payload []byte) ([]PR, error) {
+	var rows []struct {
+		Number   int      `json:"Number"`
+		Title    string   `json:"Title"`
+		Author   string   `json:"Author"`
+		MergedAt string   `json:"MergedAt"`
+		Branch   string   `json:"Branch"`
+		Labels   []string `json:"Labels"`
+	}
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		return nil, fmt.Errorf("collect prs via api: decode response: %w", err)
+	}
+	prs := make([]PR, 0, len(rows))
+	for idx, row := range rows {
+		mergedAt, err := asTime(row.MergedAt)
+		if err != nil {
+			return nil, fmt.Errorf("collect prs via api: row %d invalid merged_at: %w", idx, err)
+		}
+		prs = append(prs, PR{
+			Number:   row.Number,
+			Title:    row.Title,
+			Author:   row.Author,
+			MergedAt: mergedAt,
+			Branch:   row.Branch,
+			Labels:   row.Labels,
+		})
+	}
+	return prs, nil
+}
+
+func parseAPITags(payload []byte) ([]Tag, error) {
+	var rows []struct {
+		Name string `json:"Name"`
+		Sha  string `json:"Sha"`
+	}
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		return nil, fmt.Errorf("collect tags via api: decode response: %w", err)
+	}
+	tags := make([]Tag, 0, len(rows))
+	for _, row := range rows {
+		tags = append(tags, Tag{Name: strings.TrimSpace(row.Name), Sha: strings.TrimSpace(row.Sha)})
+	}
+	return tags, nil
+}
+
+func parseAPIReleases(payload []byte) ([]Release, error) {
+	var rows []struct {
+		Name        string `json:"Name"`
+		TagName     string `json:"TagName"`
+		PublishedAt string `json:"PublishedAt"`
+	}
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		return nil, fmt.Errorf("collect releases via api: decode response: %w", err)
+	}
+	releases := make([]Release, 0, len(rows))
+	for idx, row := range rows {
+		publishedAt, err := asTime(row.PublishedAt)
+		if err != nil {
+			return nil, fmt.Errorf("collect releases via api: row %d invalid published_at: %w", idx, err)
+		}
+		releases = append(releases, Release{Name: row.Name, TagName: row.TagName, PublishedAt: publishedAt})
+	}
+	return releases, nil
+}
+
+func parseStringArray(payload []byte) ([]string, error) {
+	var values []string
+	if err := json.Unmarshal(payload, &values); err != nil {
+		return nil, fmt.Errorf("decode string array: %w", err)
+	}
+	return values, nil
 }
 
 func parsePRRows(result *QueryResult) ([]PR, error) {

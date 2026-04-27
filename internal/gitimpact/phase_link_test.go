@@ -75,8 +75,8 @@ func TestInferDeployment_FallsBackToMergeTime(t *testing.T) {
 	if !ok {
 		t.Fatal("expected fallback inference to be considered successful")
 	}
-	if deployment.Source != "pr_merge" {
-		t.Fatalf("expected pr_merge source, got %q", deployment.Source)
+	if deployment.Source != "fallback_merge_time" {
+		t.Fatalf("expected fallback_merge_time source, got %q", deployment.Source)
 	}
 	if !deployment.DeployedAt.Equal(mergedAt) {
 		t.Fatalf("expected merge timestamp fallback, got %s", deployment.DeployedAt)
@@ -158,7 +158,7 @@ func TestLinkHandlerHandle_AdvancePhaseAndPopulateLinkedData(t *testing.T) {
 	}
 }
 
-func TestLinkHandlerHandle_WaitsOnAmbiguousDeployments(t *testing.T) {
+func TestLinkHandlerHandle_RecordsAmbiguityWithoutWaiting(t *testing.T) {
 	t.Parallel()
 
 	releases := []Release{
@@ -180,14 +180,35 @@ func TestLinkHandlerHandle_WaitsOnAmbiguousDeployments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handle returned error: %v", err)
 	}
-	if result == nil || result.Directive != DirectiveWait {
-		t.Fatalf("expected wait directive, got %+v", result)
+	if result == nil || result.Directive != DirectiveAdvancePhase {
+		t.Fatalf("expected advance_phase directive, got %+v", result)
 	}
-	if !strings.Contains(result.WaitMessage, "Ambiguous deployment mapping") {
-		t.Fatalf("unexpected wait message: %q", result.WaitMessage)
+	if !strings.Contains(result.Output, "AmbiguousItems") {
+		t.Fatalf("unexpected output: %q", result.Output)
 	}
-	if runCtx.LinkedData != nil {
-		t.Fatalf("expected linked data to remain nil while waiting, got %#v", runCtx.LinkedData)
+	if runCtx.LinkedData == nil || len(runCtx.LinkedData.AmbiguousItems) != 2 {
+		t.Fatalf("expected ambiguity to be retained in linked data, got %#v", runCtx.LinkedData)
+	}
+}
+
+func TestProposeFeatureGroupsInfersFromGenericBranchContent(t *testing.T) {
+	t.Parallel()
+
+	groups := proposeFeatureGroups([]PR{
+		{
+			Number: 6054,
+			Title:  "feat: replace ChannelTalk with floating feature request button",
+			Branch: "codex/replace-channeltalk-feature-request",
+		},
+	})
+	if len(groups) != 1 {
+		t.Fatalf("expected one inferred group, got %#v", groups)
+	}
+	if groups[0].Name != "replace_channeltalk_feature_request" {
+		t.Fatalf("unexpected inferred group name: %q", groups[0].Name)
+	}
+	if !reflect.DeepEqual(groups[0].PRNumbers, []int{6054}) {
+		t.Fatalf("unexpected PR numbers: %#v", groups[0].PRNumbers)
 	}
 }
 

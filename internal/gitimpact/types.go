@@ -56,6 +56,22 @@ type PR struct {
 	ChangedFile []string
 }
 
+func (p *PR) UnmarshalJSON(payload []byte) error {
+	var number int
+	if err := json.Unmarshal(payload, &number); err == nil {
+		*p = PR{Number: number}
+		return nil
+	}
+
+	type prAlias PR
+	var decoded prAlias
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return err
+	}
+	*p = PR(decoded)
+	return nil
+}
+
 // Tag represents a Git tag collected from GitHub.
 type Tag struct {
 	Name      string
@@ -208,6 +224,42 @@ type ContributorStats struct {
 	TopPRNumber  int
 }
 
+func (s *ContributorStats) UnmarshalJSON(payload []byte) error {
+	type statsAlias ContributorStats
+	var raw struct {
+		statsAlias
+		MergedPRs                   *int     `json:"MergedPRs"`
+		MergedPRs2                  *int     `json:"Merged PRs"`
+		MeasuredPRCount             *int     `json:"MeasuredPRCount"`
+		MeasuredPRCount2            *int     `json:"Measured PR Count"`
+		AverageMeasuredImpactScore  *float64 `json:"AverageMeasuredImpactScore"`
+		AverageMeasuredImpactScore2 *float64 `json:"Average Measured Impact Score"`
+	}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return err
+	}
+	*s = ContributorStats(raw.statsAlias)
+	if s.PRCount == 0 && raw.MergedPRs != nil {
+		s.PRCount = *raw.MergedPRs
+	}
+	if s.PRCount == 0 && raw.MergedPRs2 != nil {
+		s.PRCount = *raw.MergedPRs2
+	}
+	if s.PRCount == 0 && raw.MeasuredPRCount != nil {
+		s.PRCount = *raw.MeasuredPRCount
+	}
+	if s.PRCount == 0 && raw.MeasuredPRCount2 != nil {
+		s.PRCount = *raw.MeasuredPRCount2
+	}
+	if s.AverageScore == 0 && raw.AverageMeasuredImpactScore != nil {
+		s.AverageScore = *raw.AverageMeasuredImpactScore
+	}
+	if s.AverageScore == 0 && raw.AverageMeasuredImpactScore2 != nil {
+		s.AverageScore = *raw.AverageMeasuredImpactScore2
+	}
+	return nil
+}
+
 type PRImpact struct {
 	PRNumber          int
 	Score             float64
@@ -221,6 +273,67 @@ type PRImpact struct {
 	AfterWindowStart  time.Time
 	AfterWindowEnd    time.Time
 	Reasoning         string
+}
+
+func (i *PRImpact) UnmarshalJSON(payload []byte) error {
+	type impactAlias PRImpact
+	var raw struct {
+		impactAlias
+		ImpactScore        *float64 `json:"ImpactScore"`
+		ImpactScore2       *float64 `json:"Impact Score"`
+		ImpactLabel        string   `json:"ImpactLabel"`
+		ImpactLabel2       string   `json:"Impact Label"`
+		Reason             string   `json:"Reason"`
+		Before             *float64 `json:"Before"`
+		After              *float64 `json:"After"`
+		Delta              *float64 `json:"Delta"`
+		BeforeWindowStart2 string   `json:"Before Window Start"`
+		BeforeWindowEnd2   string   `json:"Before Window End"`
+		AfterWindowStart2  string   `json:"After Window Start"`
+		AfterWindowEnd2    string   `json:"After Window End"`
+	}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return err
+	}
+	*i = PRImpact(raw.impactAlias)
+	if i.Score == 0 && raw.ImpactScore != nil {
+		i.Score = *raw.ImpactScore
+	}
+	if i.Score == 0 && raw.ImpactScore2 != nil {
+		i.Score = *raw.ImpactScore2
+	}
+	if strings.TrimSpace(i.Confidence) == "" && strings.TrimSpace(raw.ImpactLabel) != "" {
+		i.Confidence = strings.TrimSpace(raw.ImpactLabel)
+	}
+	if strings.TrimSpace(i.Confidence) == "" && strings.TrimSpace(raw.ImpactLabel2) != "" {
+		i.Confidence = strings.TrimSpace(raw.ImpactLabel2)
+	}
+	if strings.TrimSpace(i.Reasoning) == "" && strings.TrimSpace(raw.Reason) != "" {
+		i.Reasoning = strings.TrimSpace(raw.Reason)
+	}
+	if i.BeforeValue == 0 && raw.Before != nil {
+		i.BeforeValue = *raw.Before
+	}
+	if i.AfterValue == 0 && raw.After != nil {
+		i.AfterValue = *raw.After
+	}
+	if i.DeltaValue == 0 && raw.Delta != nil {
+		i.DeltaValue = *raw.Delta
+	}
+	applyOptionalTime(&i.BeforeWindowStart, raw.BeforeWindowStart2)
+	applyOptionalTime(&i.BeforeWindowEnd, raw.BeforeWindowEnd2)
+	applyOptionalTime(&i.AfterWindowStart, raw.AfterWindowStart2)
+	applyOptionalTime(&i.AfterWindowEnd, raw.AfterWindowEnd2)
+	return nil
+}
+
+func applyOptionalTime(target *time.Time, value string) {
+	if target == nil || !target.IsZero() || strings.TrimSpace(value) == "" {
+		return
+	}
+	if parsed, err := asTime(value); err == nil {
+		*target = parsed
+	}
 }
 
 type AnalysisResult struct {

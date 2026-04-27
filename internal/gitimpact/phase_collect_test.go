@@ -130,6 +130,80 @@ func TestCollectHandlerHandle_PropagatesQueryError(t *testing.T) {
 	}
 }
 
+func TestCollectHandlerHandle_FallsBackToAPIForNonQueryableSource(t *testing.T) {
+	t.Parallel()
+
+	since := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	apiCalls := []string{}
+	handler := &CollectHandler{
+		Query: func(*OneQueryClient, string, string) (*QueryResult, error) {
+			return nil, &OneQueryError{Code: "SOURCE_NOT_QUERYABLE", Message: "not queryable"}
+		},
+		API: func(_ *OneQueryClient, sourceKey string, target string, fields []string, jq string) ([]byte, error) {
+			if sourceKey != "github-main" {
+				t.Fatalf("unexpected source key: %q", sourceKey)
+			}
+			apiCalls = append(apiCalls, target)
+			switch target {
+			case "wordbricks/wordbricks/pulls":
+				if !strings.Contains(jq, "2026-04-01T00:00:00Z") {
+					t.Fatalf("jq did not include since filter: %s", jq)
+				}
+				return []byte(`[{"Number":6054,"Title":"Feature","Author":"alice","MergedAt":"2026-04-13T12:41:07Z","Branch":"feature/x","Labels":["impact"]}]`), nil
+			case "wordbricks/wordbricks/pulls/6054/files":
+				return []byte(`["apps/web/page.tsx"]`), nil
+			case "wordbricks/wordbricks/tags":
+				return []byte(`[{"Name":"v1.0.0","Sha":"abc123"}]`), nil
+			case "wordbricks/wordbricks/releases":
+				return []byte(`[{"Name":"Release","TagName":"v1.0.0","PublishedAt":"2026-04-14T00:00:00Z"}]`), nil
+			default:
+				t.Fatalf("unexpected api target: %q fields=%#v jq=%s", target, fields, jq)
+				return nil, nil
+			}
+		},
+	}
+
+	runCtx := &RunContext{
+		OneQueryClient: &OneQueryClient{},
+		Config: &Config{
+			OneQuery: OneQueryConfig{
+				GitHubRepository: "wordbricks/wordbricks",
+				Sources:          OneQuerySources{GitHub: "github-main"},
+			},
+		},
+		AnalysisCtx: &AnalysisContext{Since: &since},
+	}
+
+	result, err := handler.Handle(context.Background(), runCtx)
+	if err != nil {
+		t.Fatalf("handle returned error: %v", err)
+	}
+	if result == nil || result.Directive != DirectiveAdvancePhase {
+		t.Fatalf("expected advance directive, got %+v", result)
+	}
+	if len(runCtx.CollectedData.PRs) != 1 {
+		t.Fatalf("expected 1 PR, got %#v", runCtx.CollectedData.PRs)
+	}
+	if !reflect.DeepEqual(runCtx.CollectedData.PRs[0].ChangedFile, []string{"apps/web/page.tsx"}) {
+		t.Fatalf("unexpected changed files: %#v", runCtx.CollectedData.PRs[0].ChangedFile)
+	}
+	if len(runCtx.CollectedData.Tags) != 1 || runCtx.CollectedData.Tags[0].Sha != "abc123" {
+		t.Fatalf("unexpected tags: %#v", runCtx.CollectedData.Tags)
+	}
+	if len(runCtx.CollectedData.Releases) != 1 || runCtx.CollectedData.Releases[0].TagName != "v1.0.0" {
+		t.Fatalf("unexpected releases: %#v", runCtx.CollectedData.Releases)
+	}
+	wantCalls := []string{
+		"wordbricks/wordbricks/pulls",
+		"wordbricks/wordbricks/pulls/6054/files",
+		"wordbricks/wordbricks/tags",
+		"wordbricks/wordbricks/releases",
+	}
+	if !reflect.DeepEqual(apiCalls, wantCalls) {
+		t.Fatalf("unexpected api calls: %#v", apiCalls)
+	}
+}
+
 func TestCollectHandlerHandle_InvalidPRRowsReturnError(t *testing.T) {
 	t.Parallel()
 

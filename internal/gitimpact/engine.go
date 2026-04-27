@@ -2,6 +2,7 @@ package gitimpact
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 )
@@ -74,6 +75,23 @@ type LinkedData struct {
 type ScoredData struct {
 	PRImpacts        []PRImpact
 	ContributorStats []ContributorStats
+}
+
+func (d *ScoredData) UnmarshalJSON(payload []byte) error {
+	var raw struct {
+		PRImpacts        []PRImpact         `json:"PRImpacts"`
+		ContributorStats []ContributorStats `json:"ContributorStats"`
+		Contributors     []ContributorStats `json:"Contributors"`
+	}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return err
+	}
+	d.PRImpacts = raw.PRImpacts
+	d.ContributorStats = raw.ContributorStats
+	if len(d.ContributorStats) == 0 {
+		d.ContributorStats = raw.Contributors
+	}
+	return nil
 }
 
 // Engine executes ordered git-impact phases using phased-delivery directives.
