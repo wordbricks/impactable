@@ -1,8 +1,10 @@
 package wtl
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestThreadStartParamsUseWireSandboxValue(t *testing.T) {
@@ -102,4 +104,57 @@ func TestSummarizeNotificationCapturesUsefulDebugDetails(t *testing.T) {
 			t.Fatalf("summary missing %q: %q", expected, summary)
 		}
 	}
+}
+
+func TestReadLoopHandlesLargeJSONRPCNotification(t *testing.T) {
+	t.Parallel()
+
+	largeText := strings.Repeat("x", 2*1024*1024)
+	line, err := json.Marshal(rpcEnvelope{
+		Method: "item/commandExecution/outputDelta",
+		Params: mustRawMessage(t, map[string]any{
+			"delta": largeText,
+		}),
+	})
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+
+	runner := &appServerRunner{
+		notifications: make(chan notification, 1),
+		readErr:       make(chan error, 1),
+		pending:       map[int64]chan rpcEnvelope{},
+	}
+	go runner.readLoop(strings.NewReader(string(line)+"\n"), false)
+
+	select {
+	case note := <-runner.notifications:
+		if note.Method != "item/commandExecution/outputDelta" {
+			t.Fatalf("unexpected method: %q", note.Method)
+		}
+		if got, _ := note.Params["delta"].(string); got != largeText {
+			t.Fatalf("large delta was not preserved: got %d bytes", len(got))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for large notification")
+	}
+
+	select {
+	case err := <-runner.readErr:
+		if err != nil {
+			t.Fatalf("readLoop returned error for large notification: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for readLoop completion")
+	}
+}
+
+func mustRawMessage(t *testing.T, value any) json.RawMessage {
+	t.Helper()
+
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal raw message: %v", err)
+	}
+	return body
 }

@@ -507,35 +507,52 @@ func (r *appServerRunner) notify(method string, params any) error {
 }
 
 func (r *appServerRunner) readLoop(reader io.Reader, discard bool) {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
+	lineReader := bufio.NewReader(reader)
+	for {
+		line, err := lineReader.ReadString('\n')
+		if errors.Is(err, io.EOF) && strings.TrimSpace(line) == "" {
+			r.readErr <- nil
+			return
+		}
+		if err != nil && !errors.Is(err, io.EOF) {
+			r.readErr <- err
+			return
+		}
 		if discard {
-			continue
-		}
-		line := scanner.Text()
-		envelope := rpcEnvelope{}
-		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
-			continue
-		}
-		if envelope.ID != nil {
-			r.pendingMu.Lock()
-			ch := r.pending[*envelope.ID]
-			delete(r.pending, *envelope.ID)
-			r.pendingMu.Unlock()
-			if ch != nil {
-				ch <- envelope
+			if errors.Is(err, io.EOF) {
+				r.readErr <- nil
+				return
 			}
 			continue
 		}
-		if strings.TrimSpace(envelope.Method) == "" {
-			continue
+		envelope := rpcEnvelope{}
+		if unmarshalErr := json.Unmarshal([]byte(line), &envelope); unmarshalErr == nil {
+			r.handleEnvelope(envelope)
 		}
-		params := map[string]any{}
-		_ = json.Unmarshal(envelope.Params, &params)
-		r.notifications <- notification{Method: envelope.Method, Params: params}
+		if errors.Is(err, io.EOF) {
+			r.readErr <- nil
+			return
+		}
 	}
-	r.readErr <- scanner.Err()
+}
+
+func (r *appServerRunner) handleEnvelope(envelope rpcEnvelope) {
+	if envelope.ID != nil {
+		r.pendingMu.Lock()
+		ch := r.pending[*envelope.ID]
+		delete(r.pending, *envelope.ID)
+		r.pendingMu.Unlock()
+		if ch != nil {
+			ch <- envelope
+		}
+		return
+	}
+	if strings.TrimSpace(envelope.Method) == "" {
+		return
+	}
+	params := map[string]any{}
+	_ = json.Unmarshal(envelope.Params, &params)
+	r.notifications <- notification{Method: envelope.Method, Params: params}
 }
 
 func deltaText(params map[string]any) string {
