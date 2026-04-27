@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1504" height="1026" viewBox="0 0 1504 1026" role="img" aria-labelledby="title desc">
+  <title id="title">Git Impact Analyzer report screen</title>
+  <desc id="desc">Terminal example showing a completed Git Impact Analyzer report with phase progress, PR metadata, score, metric windows, and agent reasoning.</desc>
+  <rect width="1504" height="1026" fill="#171923"/>
+  <g font-family="SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#c9d1f2">
+    <text x="6" y="51" font-size="36">[================]  Turn 5/5 - Report</text>
+
+    <text x="10" y="141" font-size="36">✓ Sources  Done</text>
+    <text x="10" y="186" font-size="36">✓ Collect  Done</text>
+    <text x="10" y="231" font-size="36">✓ Link     Done</text>
+    <text x="10" y="276" font-size="36">✓ Score    Done</text>
+
+    <text x="6" y="321" font-size="36">PR #6007 - "feat(paca-ext): Integrate shadcn/ui and refactor sidepanel components"</text>
+    <text x="6" y="366" font-size="36">Author: @developer</text>
+    <text x="6" y="411" font-size="36">Merged: 2026-01-09 03:35, Deployed: 2026-01-09 03:35 (via fallback_merge_time pr-6007-merge)</text>
+    <text x="6" y="456" font-size="36">Impact Score: -3.6 / 10</text>
+
+    <line x1="4" y1="488" x2="814" y2="488" stroke="#c9d1f2" stroke-width="2"/>
+
+    <text x="6" y="546" font-size="36">click_sidebar_group_card: delta -8.0000 (confidence: medium)</text>
+    <text x="6" y="591" font-size="36">Windows: before 2026-01-02 -> 2026-01-08, after 2026-01-10 -> 2026-01-16</text>
+    <text x="6" y="636" font-size="36">Values: click_sidebar_group_card 11.0000 -> 3.0000 (delta -8.0000)</text>
+
+    <text x="6" y="726" font-size="36">Agent reasoning:</text>
+    <text x="6" y="771" font-size="36">Primary metric "click_sidebar_group_card" was selected because its event name</text>
+    <text x="6" y="816" font-size="36">matched PR #6007 content. Deployment marker "pr-6007-merge" at</text>
+    <text x="6" y="861" font-size="36">2026-01-09T03:35:02Z produced before window 2026-01-02..2026-01-08 and after</text>
+    <text x="6" y="906" font-size="36">window 2026-01-10..2026-01-16. Before value 11, after value 3, delta -8; score</text>
+    <text x="6" y="951" font-size="36">-3.64 reflects the bounded movement with weak attribution when deployments</text>
+    <text x="6" y="996" font-size="36">overlap.</text>
+  </g>
+</svg>
