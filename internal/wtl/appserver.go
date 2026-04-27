@@ -54,6 +54,12 @@ type AppServerTurnResult struct {
 	ErrorMessage string
 }
 
+// AppServerEvent summarizes an app-server notification observed during a turn.
+type AppServerEvent struct {
+	Method  string
+	Summary string
+}
+
 // AppServerClient exposes the Codex app-server thread/turn primitive for
 // product-specific WTL integrations outside the standalone wtl CLI.
 type AppServerClient struct {
@@ -107,10 +113,17 @@ func (c *AppServerClient) StartThread(ctx context.Context) (string, error) {
 
 // RunTurn runs one raw prompt in an existing Codex thread.
 func (c *AppServerClient) RunTurn(ctx context.Context, threadID string, prompt string, onDelta func(string)) (AppServerTurnResult, error) {
+	return c.RunTurnWithEvents(ctx, threadID, prompt, onDelta, nil)
+}
+
+// RunTurnWithEvents runs one raw prompt and reports app-server lifecycle events
+// as they are observed. The event callback is best-effort debugging telemetry;
+// it must not affect turn execution.
+func (c *AppServerClient) RunTurnWithEvents(ctx context.Context, threadID string, prompt string, onDelta func(string), onEvent func(AppServerEvent)) (AppServerTurnResult, error) {
 	if c == nil || c.runner == nil {
 		return AppServerTurnResult{}, fmt.Errorf("app-server client is nil")
 	}
-	result, err := c.runner.runTurn(ctx, threadID, prompt, onDelta)
+	result, err := c.runner.runTurn(ctx, threadID, prompt, onDelta, onEvent)
 	return AppServerTurnResult{
 		TurnID:       result.TurnID,
 		Status:       result.Status,
@@ -242,10 +255,10 @@ func clientInfoParams(cfg runConfig) map[string]any {
 }
 
 func (r *appServerRunner) RunTurn(ctx context.Context, threadID string, prompt string, onDelta func(string)) (turnResult, error) {
-	return r.runTurn(ctx, threadID, buildTurnPrompt(prompt), onDelta)
+	return r.runTurn(ctx, threadID, buildTurnPrompt(prompt), onDelta, nil)
 }
 
-func (r *appServerRunner) runTurn(ctx context.Context, threadID string, prompt string, onDelta func(string)) (turnResult, error) {
+func (r *appServerRunner) runTurn(ctx context.Context, threadID string, prompt string, onDelta func(string), onEvent func(AppServerEvent)) (turnResult, error) {
 	turnID, err := r.startTurn(ctx, threadID, prompt)
 	if err != nil {
 		return turnResult{}, err
@@ -273,6 +286,7 @@ func (r *appServerRunner) runTurn(ctx context.Context, threadID string, prompt s
 				Response: collected.String(),
 			}, ctx.Err()
 		case note := <-r.notifications:
+			notifyAppServerEvent(onEvent, note)
 			switch strings.TrimSpace(note.Method) {
 			case "item/agentMessage/delta":
 				text := deltaText(note.Params)
@@ -319,6 +333,66 @@ func (r *appServerRunner) runTurn(ctx context.Context, threadID string, prompt s
 			}
 		}
 	}
+}
+
+func notifyAppServerEvent(onEvent func(AppServerEvent), note notification) {
+	if onEvent == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	onEvent(AppServerEvent{
+		Method:  strings.TrimSpace(note.Method),
+		Summary: summarizeNotification(note),
+	})
+}
+
+func summarizeNotification(note notification) string {
+	method := strings.TrimSpace(note.Method)
+	switch method {
+	case "item/agentMessage/delta":
+		return truncateForLog(deltaText(note.Params), 240)
+	case "item/completed":
+		item, _ := note.Params["item"].(map[string]any)
+		itemType, _ := item["type"].(string)
+		if itemType == "agentMessage" {
+			return truncateForLog(extractAgentText(item), 240)
+		}
+		return summarizeMapFields(item, "type", "status", "name", "command")
+	case "turn/completed":
+		turn, _ := note.Params["turn"].(map[string]any)
+		return summarizeMapFields(turn, "id", "status")
+	default:
+		if raw, err := json.Marshal(note.Params); err == nil {
+			return truncateForLog(string(raw), 240)
+		}
+		return ""
+	}
+}
+
+func summarizeMapFields(record map[string]any, fields ...string) string {
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		value, ok := record[field]
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", field, text))
+	}
+	return strings.Join(parts, " ")
+}
+
+func truncateForLog(value string, limit int) string {
+	trimmed := strings.TrimSpace(strings.ReplaceAll(value, "\n", " "))
+	if limit <= 0 || len(trimmed) <= limit {
+		return trimmed
+	}
+	return strings.TrimSpace(trimmed[:limit]) + "..."
 }
 
 func (r *appServerRunner) Close() error {

@@ -396,7 +396,11 @@ func newPromptWaitHandler(stdin io.Reader, stdout io.Writer, terminal terminalCo
 		if err != nil && !errors.Is(err, io.EOF) {
 			return "", err
 		}
-		return strings.TrimSpace(response), nil
+		trimmed := strings.TrimSpace(response)
+		if errors.Is(err, io.EOF) && trimmed == "" {
+			return "", fmt.Errorf("analysis requires user input: %s", prompt)
+		}
+		return trimmed, nil
 	}
 }
 

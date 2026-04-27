@@ -1,6 +1,9 @@
 package wtl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestThreadStartParamsUseWireSandboxValue(t *testing.T) {
 	t.Parallel()
@@ -77,5 +80,26 @@ func TestClientInfoParamsAllowProductSpecificIdentity(t *testing.T) {
 	}
 	if got := params["version"]; got != "0.2.0" {
 		t.Fatalf("expected client version override, got %#v", got)
+	}
+}
+
+func TestSummarizeNotificationCapturesUsefulDebugDetails(t *testing.T) {
+	t.Parallel()
+
+	summary := summarizeNotification(notification{
+		Method: "item/completed",
+		Params: map[string]any{
+			"item": map[string]any{
+				"type":    "toolCall",
+				"command": "onequery api --source wordbricks-github wordbricks/wordbricks/pulls",
+				"status":  "completed",
+			},
+		},
+	})
+
+	for _, expected := range []string{"type=toolCall", "status=completed", "onequery api"} {
+		if !strings.Contains(summary, expected) {
+			t.Fatalf("summary missing %q: %q", expected, summary)
+		}
 	}
 }

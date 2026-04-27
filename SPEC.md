@@ -142,9 +142,14 @@ onequery --org <org> org current
 onequery --org <org> source list
 onequery --org <org> source show <source_key>
 
-# 3. Query — written and executed directly by the Agent
+# 3. Access source data — written and executed directly by the Agent
 onequery --org <org> query exec --source <source_key> --sql "<agent-generated SQL>"
+onequery --org <org> api --source <source_key> <selector> -f 'params[key]=value'
 ```
+
+`queryable:false` in `source list` only means the source is not exposed through
+`query exec`; connected API sources are still data-accessible through
+`onequery api --source <source_key>`.
 
 ### 4.2 Required Source Types
 

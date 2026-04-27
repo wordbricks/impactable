@@ -19,9 +19,15 @@ func (r *scriptedAgentRunner) StartThread(context.Context) (string, error) {
 	return "thr-agent", nil
 }
 
-func (r *scriptedAgentRunner) RunTurn(_ context.Context, _ string, prompt string, _ func(string)) (AgentTurnResult, error) {
+func (r *scriptedAgentRunner) RunTurn(_ context.Context, _ string, prompt string, onDelta func(string), onEvent func(AgentRuntimeEvent)) (AgentTurnResult, error) {
 	r.prompts = append(r.prompts, prompt)
 	index := len(r.prompts) - 1
+	if onEvent != nil {
+		onEvent(AgentRuntimeEvent{Method: "item/completed", Summary: "type=toolCall command=onequery api"})
+	}
+	if onDelta != nil {
+		onDelta("partial agent output")
+	}
 	if index >= len(r.responses) {
 		return AgentTurnResult{Status: "completed", Response: `{"directive":"advance_phase"}`}, nil
 	}
@@ -105,6 +111,56 @@ func TestAgentPhaseHandlerRunsCollectTurnAndAppliesPayload(t *testing.T) {
 	}
 }
 
+func TestAgentPhaseHandlerTimesOutWithTraceAndPartialOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := &timeoutAgentRunner{}
+	agent := NewCodexAgentRuntimeWithRunner(CodexAgentConfig{
+		CWD:          "/repo",
+		PhaseTimeout: time.Millisecond,
+	}, runner)
+	handler := &AgentPhaseHandler{Phase: PhaseCollect, Agent: agent}
+
+	_, err := handler.Handle(context.Background(), &RunContext{
+		Config:      &Config{},
+		AnalysisCtx: &AnalysisContext{WorkingDirectory: t.TempDir()},
+	})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	for _, expected := range []string{
+		"phase \"collect\" timed out",
+		"item/completed",
+		"onequery api",
+		"partial before timeout",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("timeout error missing %q: %v", expected, err)
+		}
+	}
+}
+
+type timeoutAgentRunner struct{}
+
+func (r *timeoutAgentRunner) StartThread(context.Context) (string, error) {
+	return "thr-timeout", nil
+}
+
+func (r *timeoutAgentRunner) RunTurn(ctx context.Context, _ string, _ string, onDelta func(string), onEvent func(AgentRuntimeEvent)) (AgentTurnResult, error) {
+	if onEvent != nil {
+		onEvent(AgentRuntimeEvent{Method: "item/completed", Summary: "type=toolCall command=onequery api --source wordbricks-github"})
+	}
+	if onDelta != nil {
+		onDelta("partial before timeout")
+	}
+	<-ctx.Done()
+	return AgentTurnResult{Status: "interrupted", Response: "partial before timeout"}, ctx.Err()
+}
+
+func (r *timeoutAgentRunner) Close() error {
+	return nil
+}
+
 func TestBuildAgentPhasePromptIncludesRuntimeContract(t *testing.T) {
 	t.Parallel()
 
@@ -166,6 +222,7 @@ func TestBuildAgentPhasePromptCollectUsesConfiguredGitHubRepository(t *testing.T
 		"Config.OneQuery.GitHubRepository is set",
 		"analyze exactly that GitHub repository full name",
 		"do not infer the repository from the current worktree",
+		"onequery api",
 		"wordbricks/wordbricks",
 	} {
 		if !strings.Contains(prompt, expected) {

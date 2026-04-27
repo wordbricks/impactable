@@ -3,8 +3,10 @@ package gitimpact
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,15 +19,19 @@ const (
 	agentCommandEnv       = "GIT_IMPACT_CODEX_COMMAND"
 	agentModelEnv         = "GIT_IMPACT_MODEL"
 	agentFallbackModelEnv = "WTL_MODEL"
+	agentPhaseTimeoutEnv  = "GIT_IMPACT_PHASE_TIMEOUT"
 	agentApprovalPolicy   = "never"
 	agentSandbox          = "workspace-write"
 	agentClientTitle      = "Git Impact Analyzer"
 	agentClientVersion    = "0.1.0"
+	defaultPhaseTimeout   = 30 * time.Minute
+	agentTraceDir         = ".git-impact"
+	agentTraceFile        = "agent-events.jsonl"
 )
 
 type agentTurnRunner interface {
 	StartThread(context.Context) (string, error)
-	RunTurn(context.Context, string, string, func(string)) (AgentTurnResult, error)
+	RunTurn(context.Context, string, string, func(string), func(AgentRuntimeEvent)) (AgentTurnResult, error)
 	Close() error
 }
 
@@ -38,10 +44,19 @@ type AgentTurnResult struct {
 	ErrorMessage string
 }
 
+// AgentRuntimeEvent is a compact trace event from the app-server turn.
+type AgentRuntimeEvent struct {
+	At      time.Time `json:"at"`
+	Phase   Phase     `json:"phase"`
+	Method  string    `json:"method"`
+	Summary string    `json:"summary,omitempty"`
+}
+
 // CodexAgentConfig configures the Codex app-server backed git-impact agent.
 type CodexAgentConfig struct {
-	CWD   string
-	Model string
+	CWD          string
+	Model        string
+	PhaseTimeout time.Duration
 }
 
 // CodexAgentRuntime runs each git-impact phase as one Codex app-server turn on
@@ -51,6 +66,9 @@ type CodexAgentRuntime struct {
 	threadID string
 	model    string
 	cwd      string
+	timeout  time.Duration
+	trace    []AgentRuntimeEvent
+	output   string
 }
 
 // NewCodexAgentRuntime starts a Codex app-server backed agent runtime.
@@ -75,9 +93,10 @@ func NewCodexAgentRuntime(cfg CodexAgentConfig) (*CodexAgentRuntime, error) {
 
 func NewCodexAgentRuntimeWithRunner(cfg CodexAgentConfig, runner agentTurnRunner) *CodexAgentRuntime {
 	return &CodexAgentRuntime{
-		runner: runner,
-		model:  ResolveAgentModel(cfg.Model),
-		cwd:    strings.TrimSpace(cfg.CWD),
+		runner:  runner,
+		model:   ResolveAgentModel(cfg.Model),
+		cwd:     strings.TrimSpace(cfg.CWD),
+		timeout: resolvePhaseTimeout(cfg.PhaseTimeout),
 	}
 }
 
@@ -93,6 +112,18 @@ func ResolveAgentModel(model string) string {
 		return value
 	}
 	return defaultAgentModel
+}
+
+func resolvePhaseTimeout(timeout time.Duration) time.Duration {
+	if value := strings.TrimSpace(os.Getenv(agentPhaseTimeoutEnv)); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	if timeout > 0 {
+		return timeout
+	}
+	return defaultPhaseTimeout
 }
 
 // Close terminates the underlying app-server process.
@@ -119,8 +150,31 @@ func (r *CodexAgentRuntime) runPhase(ctx context.Context, runCtx *RunContext, ph
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.runner.RunTurn(ctx, r.threadID, prompt, nil)
+
+	phaseCtx := ctx
+	cancel := func() {}
+	if r.timeout > 0 {
+		phaseCtx, cancel = context.WithTimeout(ctx, r.timeout)
+	}
+	defer cancel()
+
+	var partial strings.Builder
+	r.output = ""
+	result, err := r.runner.RunTurn(phaseCtx, r.threadID, prompt, func(delta string) {
+		partial.WriteString(delta)
+		r.output = partial.String()
+	}, func(event AgentRuntimeEvent) {
+		event.Phase = phase
+		r.recordEvent(runCtx, event)
+	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			output := strings.TrimSpace(result.Response)
+			if output == "" {
+				output = strings.TrimSpace(partial.String())
+			}
+			return nil, r.phaseTimeoutError(phase, output)
+		}
 		return &TurnResult{Directive: DirectiveRetry, Error: err, Output: result.Response}, nil
 	}
 	if strings.EqualFold(strings.TrimSpace(result.Status), "failed") {
@@ -149,6 +203,75 @@ func (r *CodexAgentRuntime) runPhase(ctx context.Context, runCtx *RunContext, ph
 	}, nil
 }
 
+func (r *CodexAgentRuntime) recordEvent(runCtx *RunContext, event AgentRuntimeEvent) {
+	if r == nil {
+		return
+	}
+	if event.At.IsZero() {
+		event.At = time.Now().UTC()
+	}
+	event.Method = strings.TrimSpace(event.Method)
+	event.Summary = strings.TrimSpace(event.Summary)
+	r.trace = append(r.trace, event)
+	if len(r.trace) > 40 {
+		r.trace = r.trace[len(r.trace)-40:]
+	}
+	appendAgentTrace(runCtx, event)
+}
+
+func (r *CodexAgentRuntime) phaseTimeoutError(phase Phase, partialOutput string) error {
+	lastEvent := "none"
+	if r != nil {
+		for idx := len(r.trace) - 1; idx >= 0; idx-- {
+			last := r.trace[idx]
+			if last.Phase != phase {
+				continue
+			}
+			lastEvent = fmt.Sprintf("%s %s", last.Method, last.Summary)
+			break
+		}
+	}
+	output := truncateAgentText(partialOutput, 800)
+	if output == "" && r != nil {
+		output = truncateAgentText(r.output, 800)
+	}
+	if output == "" {
+		return fmt.Errorf("phase %q timed out after %s waiting for codex app-server turn completion; last_event=%s; trace_file=%s", phase, r.timeout, lastEvent, filepath.Join(agentTraceDir, agentTraceFile))
+	}
+	return fmt.Errorf("phase %q timed out after %s waiting for codex app-server turn completion; last_event=%s; partial_output=%q; trace_file=%s", phase, r.timeout, lastEvent, output, filepath.Join(agentTraceDir, agentTraceFile))
+}
+
+func appendAgentTrace(runCtx *RunContext, event AgentRuntimeEvent) {
+	if runCtx == nil || runCtx.AnalysisCtx == nil {
+		return
+	}
+	baseDir := strings.TrimSpace(runCtx.AnalysisCtx.WorkingDirectory)
+	if baseDir == "" {
+		return
+	}
+	dir := filepath.Join(baseDir, agentTraceDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	path := filepath.Join(dir, agentTraceFile)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+	_ = json.NewEncoder(file).Encode(event)
+}
+
+func truncateAgentText(value string, limit int) string {
+	trimmed := strings.TrimSpace(value)
+	if limit <= 0 || len(trimmed) <= limit {
+		return trimmed
+	}
+	return strings.TrimSpace(trimmed[:limit]) + "..."
+}
+
 type wtlClientAdapter struct {
 	client *wtl.AppServerClient
 }
@@ -157,8 +280,17 @@ func (a *wtlClientAdapter) StartThread(ctx context.Context) (string, error) {
 	return a.client.StartThread(ctx)
 }
 
-func (a *wtlClientAdapter) RunTurn(ctx context.Context, threadID string, prompt string, onDelta func(string)) (AgentTurnResult, error) {
-	result, err := a.client.RunTurn(ctx, threadID, prompt, onDelta)
+func (a *wtlClientAdapter) RunTurn(ctx context.Context, threadID string, prompt string, onDelta func(string), onEvent func(AgentRuntimeEvent)) (AgentTurnResult, error) {
+	result, err := a.client.RunTurnWithEvents(ctx, threadID, prompt, onDelta, func(event wtl.AppServerEvent) {
+		if onEvent == nil {
+			return
+		}
+		onEvent(AgentRuntimeEvent{
+			At:      time.Now().UTC(),
+			Method:  event.Method,
+			Summary: event.Summary,
+		})
+	})
 	return AgentTurnResult{
 		TurnID:       result.TurnID,
 		Status:       result.Status,
@@ -272,13 +404,13 @@ func BuildAgentPhasePrompt(runCtx *RunContext, phase Phase) (string, error) {
 
 You are running inside Codex app-server. This is one WTL turn for phase %q.
 Use only OneQuery CLI for external data access. Do not use direct credentials or write operations.
-All OneQuery SQL must be SELECT-only and bounded by date filters and LIMITs where practical.
+Use "onequery query exec" for SQL-queryable sources and "onequery api --source <source_key>" for connected API sources, including sources whose source metadata has queryable=false. All OneQuery SQL must be SELECT-only and bounded by date filters and LIMITs where practical. API calls must use read-only HTTP methods unless a phase explicitly requires otherwise.
 
 Configured flow:
 - Source check: run "onequery --org <org> auth whoami", "onequery --org <org> org current", "onequery --org <org> source list", and "source show" for required sources.
-- Collect: query GitHub source for PRs, commits, branches, tags, releases, labels, and changed files for the requested scope.
+- Collect: use OneQuery query or API commands against the GitHub source for PRs, commits, branches, tags, releases, labels, and changed files for the requested scope.
 - Link: infer deployment markers from releases, tags, then PR merge time; wait when mapping is ambiguous.
-- Score: explore analytics schema, choose relevant metrics, query before/after deployment windows, and explain confidence.
+- Score: explore the analytics source through OneQuery query or API commands, choose relevant metrics, fetch bounded before/after deployment windows, and explain confidence.
 - Report: produce final analysis data and complete the run.
 
 Current state JSON:
@@ -310,13 +442,13 @@ When returning collected_data, use exactly the PRs, Tags, and Releases top-level
 func phaseInstructions(phase Phase) string {
 	switch phase {
 	case PhaseSourceCheck:
-		return "Verify org and required GitHub/Analytics OneQuery sources. If a required source is missing, return directive wait with a specific question. Otherwise return advance_phase."
+		return "Verify org and required GitHub/Analytics OneQuery sources. A source with queryable=false can still be usable through onequery api, so do not reject a source only because it is not SQL-queryable. If a required source is missing, return directive wait with a specific question. Otherwise return advance_phase."
 	case PhaseCollect:
-		return "Collect GitHub PR, tag, and release data for the requested scope. If Config.OneQuery.GitHubRepository is set, analyze exactly that GitHub repository full name and do not infer the repository from the current worktree or local git remote. Return collected_data using the exact typed schema: Tags must be objects with Name, optional Sha, and optional CreatedAt; never return Tags as strings or as arbitrary metadata objects. Return advance_phase when enough data is present."
+		return "Collect GitHub PR, tag, and release data for the requested scope. Prefer onequery api for GitHub connected API sources, for example `onequery --org <org> api --source <github_source> <owner>/<repo>/pulls -f params[state]=closed -f params[per_page]=100`; follow with API calls for commits, tags, releases, labels, and changed files as needed. If Config.OneQuery.GitHubRepository is set, analyze exactly that GitHub repository full name and do not infer the repository from the current worktree or local git remote. Return collected_data using the exact typed schema: Tags must be objects with Name, optional Sha, and optional CreatedAt; never return Tags as strings or as arbitrary metadata objects. Return advance_phase when enough data is present."
 	case PhaseLink:
 		return "Infer deployments and feature groups from collected_data. If a deployment or feature mapping is ambiguous, return wait with the concrete mapping question. Otherwise return linked_data and advance_phase."
 	case PhaseScore:
-		return "Explore analytics schema through OneQuery, choose relevant metrics, query bounded before/after windows, calculate PR impact and contributor stats. For every PRImpact, populate structured fields as available: PrimaryMetric, BeforeValue, AfterValue, DeltaValue, BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd. Use RFC3339 timestamps for window boundaries. Also write a detailed multi-line Reasoning string instead of a one-line summary. The reasoning must explain: (1) why the primary metric was chosen over other available metrics, (2) the deployment marker and before/after analysis windows used, with concrete dates, (3) the before/after metric values and delta, (4) why that movement implies the assigned impact score, and (5) what reduces or increases confidence, including overlapping deployments or weak attribution. Use explicit numbers and dates. Return scored_data and advance_phase."
+		return "Explore analytics through OneQuery. Use onequery query exec when the source is SQL-queryable, or onequery api for connected API sources such as Amplitude, for example `onequery --org <org> api --source <analytics_source> /2/events/segmentation -f 'params[e]=[...]' -f params[start]=YYYY-MM-DD -f params[end]=YYYY-MM-DD`. Choose relevant metrics, fetch bounded before/after windows, calculate PR impact and contributor stats. For every PRImpact, populate structured fields as available: PrimaryMetric, BeforeValue, AfterValue, DeltaValue, BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd. Use RFC3339 timestamps for window boundaries. Also write a detailed multi-line Reasoning string instead of a one-line summary. The reasoning must explain: (1) why the primary metric was chosen over other available metrics, (2) the deployment marker and before/after analysis windows used, with concrete dates, (3) the before/after metric values and delta, (4) why that movement implies the assigned impact score, and (5) what reduces or increases confidence, including overlapping deployments or weak attribution. Use explicit numbers and dates. Return scored_data and advance_phase."
 	case PhaseReport:
 		return "Assemble the final report data from current state. Return complete with output and optionally analysis_result."
 	default:

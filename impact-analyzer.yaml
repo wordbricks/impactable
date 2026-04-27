@@ -1,9 +1,9 @@
 onequery:
-  org: jay
+  org: onequery-demo
   github_repository: wordbricks/wordbricks
   sources:
     github: wordbricks-github
-    analytics: getgpt-prod
+    analytics: getgpt-amplitude
 
 analysis:
   before_window_days: 7

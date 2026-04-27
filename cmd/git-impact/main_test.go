@@ -101,6 +101,18 @@ func TestNewPromptWaitHandler_ReturnsReleaseError(t *testing.T) {
 	}
 }
 
+func TestNewPromptWaitHandler_ReturnsErrorOnEmptyEOF(t *testing.T) {
+	handler := newPromptWaitHandler(strings.NewReader(""), &bytes.Buffer{}, nil)
+
+	_, err := handler("Continue anyway? (y/n)")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "analysis requires user input") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeMainTestConfig(t *testing.T, dir string) {
 	t.Helper()
 
