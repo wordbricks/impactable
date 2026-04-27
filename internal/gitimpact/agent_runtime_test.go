@@ -140,6 +140,45 @@ func TestAgentPhaseHandlerTimesOutWithTraceAndPartialOutput(t *testing.T) {
 	}
 }
 
+func TestAgentPhaseHandlerAdvancesScoreWhenBoundedAnalyticsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	runner := &scriptedAgentRunner{
+		responses: []AgentTurnResult{{
+			Status: "completed",
+			Response: `{
+				"directive":"retry",
+				"output":"Score phase remains blocked because the analytics source does not expose working bounded metric reads through the available OneQuery API paths.",
+				"scored_data":{"PRImpacts":[],"ContributorStats":[]},
+				"error":"Advancing without a working bounded endpoint would require fabricating analytics."
+			}`,
+		}},
+	}
+	agent := NewCodexAgentRuntimeWithRunner(CodexAgentConfig{CWD: "/repo"}, runner)
+	handler := &AgentPhaseHandler{Phase: PhaseScore, Agent: agent}
+	runCtx := &RunContext{
+		Config:      &Config{},
+		AnalysisCtx: &AnalysisContext{WorkingDirectory: "/repo"},
+		LinkedData: &LinkedData{
+			Deployments: []Deployment{{PRNumber: 142, Marker: "merge", Source: "merge_time", DeployedAt: time.Date(2026, 4, 13, 12, 41, 7, 0, time.UTC)}},
+		},
+	}
+
+	result, err := handler.Handle(context.Background(), runCtx)
+	if err != nil {
+		t.Fatalf("handle phase: %v", err)
+	}
+	if result.Directive != DirectiveAdvancePhase {
+		t.Fatalf("directive = %q, want %q", result.Directive, DirectiveAdvancePhase)
+	}
+	if runCtx.ScoredData == nil {
+		t.Fatal("expected scored data placeholder")
+	}
+	if len(runCtx.ScoredData.PRImpacts) != 0 || len(runCtx.ScoredData.ContributorStats) != 0 {
+		t.Fatalf("expected empty unavailable scoring payload, got %#v", runCtx.ScoredData)
+	}
+}
+
 type timeoutAgentRunner struct{}
 
 func (r *timeoutAgentRunner) StartThread(context.Context) (string, error) {
@@ -257,9 +296,23 @@ func TestBuildAgentPhasePromptIncludesDetailedScoreReasoningContract(t *testing.
 		"why the primary metric was chosen",
 		"before/after analysis windows used, with concrete dates",
 		"why that movement implies the assigned impact score",
+		"Do not fabricate analytics values",
+		"return scored_data with empty PRImpacts and ContributorStats",
+		"use directive advance_phase instead of retry",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("score prompt missing %q:\n%s", expected, prompt)
+		}
+	}
+	for _, unexpected := range []string{
+		"/2/events/segmentation",
+		"params[e]=[...]",
+		"onequery api --help",
+		"--dry-run",
+		"Discover the correct OneQuery CLI",
+	} {
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("score prompt should not include hard-coded provider example %q:\n%s", unexpected, prompt)
 		}
 	}
 }

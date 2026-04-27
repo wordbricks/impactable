@@ -195,6 +195,12 @@ func (r *CodexAgentRuntime) runPhase(ctx context.Context, runCtx *RunContext, ph
 	if directive == "" {
 		directive = DirectiveContinue
 	}
+	if phase == PhaseScore && directive == DirectiveRetry && isScoreUnavailablePayload(payload) {
+		directive = DirectiveAdvancePhase
+		if runCtx.ScoredData == nil {
+			runCtx.ScoredData = &ScoredData{}
+		}
+	}
 	return &TurnResult{
 		Directive:   directive,
 		WaitMessage: payload.WaitMessage,
@@ -328,6 +334,29 @@ func AgentHandlers(agent *CodexAgentRuntime) map[Phase]PhaseHandler {
 	}
 }
 
+func isScoreUnavailablePayload(payload AgentPhasePayload) bool {
+	if payload.ScoredData == nil {
+		return false
+	}
+	if len(payload.ScoredData.PRImpacts) > 0 || len(payload.ScoredData.ContributorStats) > 0 {
+		return false
+	}
+	text := strings.ToLower(strings.Join([]string{payload.Output, payload.Error}, " "))
+	for _, phrase := range []string{
+		"cannot be completed reliably",
+		"fabricating analytics",
+		"does not expose working bounded",
+		"no working bounded",
+		"bounded endpoint",
+		"analytics source",
+	} {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 // NewAgentEngine builds a git-impact engine that delegates each phase turn to
 // Codex app-server.
 func NewAgentEngine(agent *CodexAgentRuntime, observer Observer, waitHandler WaitHandler) *Engine {
@@ -448,7 +477,7 @@ func phaseInstructions(phase Phase) string {
 	case PhaseLink:
 		return "Infer deployments and feature groups from collected_data. If a deployment or feature mapping is ambiguous, return wait with the concrete mapping question. Otherwise return linked_data and advance_phase."
 	case PhaseScore:
-		return "Explore analytics through OneQuery. Use onequery query exec when the source is SQL-queryable, or onequery api for connected API sources such as Amplitude, for example `onequery --org <org> api --source <analytics_source> /2/events/segmentation -f 'params[e]=[...]' -f params[start]=YYYY-MM-DD -f params[end]=YYYY-MM-DD`. Choose relevant metrics, fetch bounded before/after windows, calculate PR impact and contributor stats. For every PRImpact, populate structured fields as available: PrimaryMetric, BeforeValue, AfterValue, DeltaValue, BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd. Use RFC3339 timestamps for window boundaries. Also write a detailed multi-line Reasoning string instead of a one-line summary. The reasoning must explain: (1) why the primary metric was chosen over other available metrics, (2) the deployment marker and before/after analysis windows used, with concrete dates, (3) the before/after metric values and delta, (4) why that movement implies the assigned impact score, and (5) what reduces or increases confidence, including overlapping deployments or weak attribution. Use explicit numbers and dates. Return scored_data and advance_phase."
+		return "Explore analytics through OneQuery. Choose relevant metrics, fetch bounded before/after windows, calculate PR impact and contributor stats. For every PRImpact, populate structured fields as available: PrimaryMetric, BeforeValue, AfterValue, DeltaValue, BeforeWindowStart, BeforeWindowEnd, AfterWindowStart, and AfterWindowEnd. Use RFC3339 timestamps for window boundaries. Also write a detailed multi-line Reasoning string instead of a one-line summary. The reasoning must explain: (1) why the primary metric was chosen over other available metrics, (2) the deployment marker and before/after analysis windows used, with concrete dates, (3) the before/after metric values and delta, (4) why that movement implies the assigned impact score, and (5) what reduces or increases confidence, including overlapping deployments or weak attribution. Use explicit numbers and dates when bounded metric reads succeed. Do not fabricate analytics values. If source discovery succeeds but bounded metric endpoints fail or time out after reasonable attempts, return scored_data with empty PRImpacts and ContributorStats, explain the unavailable bounded evidence in output, and use directive advance_phase instead of retry. Reserve retry for transient tool/runtime failures that another identical phase turn can plausibly fix."
 	case PhaseReport:
 		return "Assemble the final report data from current state. Return complete with output and optionally analysis_result."
 	default:
